@@ -38,6 +38,7 @@ import {
   RiFileCopyLine,
   RiFolderAddLine,
   RiGitBranchLine,
+  RiGitRepositoryLine,
   RiLinkUnlinkM,
   RiMore2Line,
   RiPencilAiLine,
@@ -58,6 +59,7 @@ import { checkIsGitRepository } from '@/lib/gitApi';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { BranchPickerDialog } from './BranchPickerDialog';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const SESSION_EXPANDED_STORAGE_KEY = 'oc.sessions.expandedParents';
@@ -133,6 +135,8 @@ interface SortableProjectItemProps {
   onToggle: () => void;
   onHoverChange: (hovered: boolean) => void;
   onNewSession: () => void;
+  onNewWorktreeSession?: () => void;
+  onOpenBranchPicker?: () => void;
   onOpenMultiRunLauncher: () => void;
   onClose: () => void;
   sentinelRef: (el: HTMLDivElement | null) => void;
@@ -154,6 +158,8 @@ const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   onToggle,
   onHoverChange,
   onNewSession,
+  onNewWorktreeSession,
+  onOpenBranchPicker,
   onOpenMultiRunLauncher,
   onClose,
   sentinelRef,
@@ -252,6 +258,52 @@ const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Worktree button - visible on hover for git repos */}
+          {isRepo && !hideDirectoryControls && onNewWorktreeSession && (
+            <Tooltip delayDuration={700}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNewWorktreeSession();
+                  }}
+                  className={cn(
+                    'inline-flex h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity',
+                    mobileVariant ? 'opacity-70' : 'opacity-0 group-hover/project:opacity-100',
+                  )}
+                  aria-label="New worktree session"
+                >
+                  <RiGitBranchLine className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">New worktree session</TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* Branch picker button - visible on hover for git repos */}
+          {isRepo && !hideDirectoryControls && onOpenBranchPicker && (
+            <Tooltip delayDuration={700}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenBranchPicker();
+                  }}
+                  className={cn(
+                    'inline-flex h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity',
+                    mobileVariant ? 'opacity-70' : 'opacity-0 group-hover/project:opacity-100',
+                  )}
+                  aria-label="Browse branches"
+                >
+                  <RiGitRepositoryLine className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Browse branches</TooltipContent>
+            </Tooltip>
+          )}
+
           {/* New session button */}
           <button
             type="button"
@@ -333,6 +385,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [projectRepoStatus, setProjectRepoStatus] = React.useState<Map<string, boolean | null>>(new Map());
   const [expandedSessionGroups, setExpandedSessionGroups] = React.useState<Set<string>>(new Set());
   const [hoveredProjectId, setHoveredProjectId] = React.useState<string | null>(null);
+  const [branchPickerOpen, setBranchPickerOpen] = React.useState(false);
   const [activeDragId, setActiveDragId] = React.useState<string | null>(null);
   const [stuckProjectHeaders, setStuckProjectHeaders] = React.useState<Set<string>>(new Set());
   const projectHeaderSentinelRefs = React.useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -1541,6 +1594,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                         openNewSessionDraft({ directoryOverride: project.normalizedPath });
                       }
                     }}
+                    onNewWorktreeSession={() => {
+                      if (projectKey !== activeProjectId) {
+                        setActiveProject(projectKey);
+                      }
+                      setActiveMainTab('chat');
+                      if (mobileVariant) {
+                        setSessionSwitcherOpen(false);
+                      }
+                      createWorktreeSession();
+                    }}
+                    onOpenBranchPicker={() => setBranchPickerOpen(true)}
                     onOpenMultiRunLauncher={() => {
                       if (projectKey !== activeProjectId) {
                         setActiveProject(projectKey);
@@ -1575,6 +1639,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         )}
       </ScrollableOverlay>
 
+      <BranchPickerDialog
+        open={branchPickerOpen}
+        onOpenChange={setBranchPickerOpen}
+        projects={normalizedProjects}
+        activeProjectId={activeProjectId}
+      />
     </div>
   );
 };
