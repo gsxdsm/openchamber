@@ -1,6 +1,11 @@
 import type {
   GitHubAPI,
   GitHubAuthStatus,
+  GitHubPullRequest,
+  GitHubPullRequestCreateInput,
+  GitHubPullRequestMergeInput,
+  GitHubPullRequestMergeResult,
+  GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
   GitHubUserSummary,
@@ -31,5 +36,20 @@ export const createDesktopGitHubAPI = (): GitHubAPI => ({
   async me(): Promise<GitHubUserSummary> {
     const { safeInvoke } = await import('../lib/tauriCallbackManager');
     return safeInvoke<GitHubUserSummary>('github_me', {}, { timeout: 8000 });
+  },
+
+  async prStatus(directory: string, branch: string): Promise<GitHubPullRequestStatus> {
+    const { safeInvoke } = await import('../lib/tauriCallbackManager');
+    return safeInvoke<GitHubPullRequestStatus>('github_pr_status', { directory, branch }, { timeout: 12000 });
+  },
+
+  async prCreate(payload: GitHubPullRequestCreateInput): Promise<GitHubPullRequest> {
+    const { safeInvoke } = await import('../lib/tauriCallbackManager');
+    return safeInvoke<GitHubPullRequest>('github_pr_create', payload, { timeout: 20000 });
+  },
+
+  async prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult> {
+    const { safeInvoke } = await import('../lib/tauriCallbackManager');
+    return safeInvoke<GitHubPullRequestMergeResult>('github_pr_merge', payload, { timeout: 20000 });
   },
 });

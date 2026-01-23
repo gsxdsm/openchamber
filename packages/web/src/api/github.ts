@@ -1,6 +1,11 @@
 import type {
   GitHubAPI,
   GitHubAuthStatus,
+  GitHubPullRequest,
+  GitHubPullRequestCreateInput,
+  GitHubPullRequestMergeInput,
+  GitHubPullRequestMergeResult,
+  GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
   GitHubUserSummary,
@@ -62,5 +67,43 @@ export const createWebGitHubAPI = (): GitHubAPI => ({
       throw new Error(payload?.error || response.statusText || 'Failed to fetch GitHub user');
     }
     return payload;
+  },
+
+  async prStatus(directory: string, branch: string): Promise<GitHubPullRequestStatus> {
+    const response = await fetch(
+      `/api/github/pr/status?directory=${encodeURIComponent(directory)}&branch=${encodeURIComponent(branch)}`,
+      { method: 'GET', headers: { Accept: 'application/json' } }
+    );
+    const payload = await jsonOrNull<GitHubPullRequestStatus & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to load PR status');
+    }
+    return payload;
+  },
+
+  async prCreate(payload: GitHubPullRequestCreateInput): Promise<GitHubPullRequest> {
+    const response = await fetch('/api/github/pr/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await jsonOrNull<GitHubPullRequest & { error?: string }>(response);
+    if (!response.ok || !body) {
+      throw new Error((body as { error?: string } | null)?.error || response.statusText || 'Failed to create PR');
+    }
+    return body;
+  },
+
+  async prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult> {
+    const response = await fetch('/api/github/pr/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await jsonOrNull<GitHubPullRequestMergeResult & { error?: string }>(response);
+    if (!response.ok || !body) {
+      throw new Error((body as { error?: string } | null)?.error || response.statusText || 'Failed to merge PR');
+    }
+    return body;
   },
 });

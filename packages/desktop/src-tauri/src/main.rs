@@ -40,11 +40,13 @@ use commands::git::{
     get_git_identities, get_git_log, get_git_status, get_global_git_identity, get_remote_url,
     git_fetch, git_pull, git_push, has_local_identity, is_linked_worktree, list_git_worktrees,
     remove_git_worktree, rename_branch, revert_git_file, set_git_identity, update_git_identity,
+    generate_pr_description,
 };
 use commands::logs::fetch_desktop_logs;
 
 use commands::github::{
     github_auth_complete, github_auth_disconnect, github_auth_start, github_auth_status, github_me,
+    github_pr_create, github_pr_merge, github_pr_status,
 };
 use commands::notifications::desktop_notify;
 use commands::permissions::{
@@ -886,6 +888,7 @@ fn main() {
             set_git_identity,
             discover_git_credentials,
             generate_commit_message,
+            generate_pr_description,
             create_terminal_session,
             send_terminal_input,
             resize_terminal,
@@ -899,6 +902,9 @@ fn main() {
             github_auth_complete,
             github_auth_disconnect,
             github_me,
+            github_pr_status,
+            github_pr_create,
+            github_pr_merge,
         ])
         .on_menu_event(|app, event| {
             #[cfg(target_os = "macos")]

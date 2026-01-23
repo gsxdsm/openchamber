@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use tauri::State;
 use tokio::fs;
+use tokio::process::Command;
 
 use crate::DesktopRuntime;
 
@@ -10,10 +11,71 @@ const DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const API_USER_URL: &str = "https://api.github.com/user";
 const API_EMAILS_URL: &str = "https://api.github.com/user/emails";
+const API_PULLS_URL_PREFIX: &str = "https://api.github.com/repos";
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 const DEFAULT_GITHUB_CLIENT_ID: &str = "Ov23liNd8TxDcMXtAHHM";
 const DEFAULT_GITHUB_SCOPES: &str = "repo read:org workflow read:user user:email";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRepoRef {
+    owner: String,
+    repo: String,
+    url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubChecksSummary {
+    state: String,
+    total: u64,
+    success: u64,
+    failure: u64,
+    pending: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestSummary {
+    number: u64,
+    title: String,
+    url: String,
+    state: String,
+    draft: bool,
+    base: String,
+    head: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    head_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mergeable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mergeable_state: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestStatus {
+    connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo: Option<GitHubRepoRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pr: Option<GitHubPullRequestSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checks: Option<GitHubChecksSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    can_merge: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestMergeResult {
+    merged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -137,6 +199,97 @@ struct ApiUserResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct PrListItem {
+    number: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullRef {
+    #[serde(rename = "ref")]
+    ref_name: String,
+    sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullBaseRef {
+    #[serde(rename = "ref")]
+    ref_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullDetailsResponse {
+    number: u64,
+    title: String,
+    html_url: String,
+    state: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    merged: bool,
+    #[serde(default)]
+    mergeable: Option<bool>,
+    #[serde(default)]
+    mergeable_state: Option<String>,
+    head: PullRef,
+    base: PullBaseRef,
+}
+
+#[derive(Debug, Deserialize)]
+struct CombinedStatusEntry {
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CombinedStatusResponse {
+    #[serde(default)]
+    statuses: Vec<CombinedStatusEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PermissionResponse {
+    permission: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PullCreateRequest<'a> {
+    title: &'a str,
+    head: &'a str,
+    base: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    draft: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullCreateResponse {
+    number: u64,
+    title: String,
+    html_url: String,
+    state: String,
+    #[serde(default)]
+    draft: bool,
+    head: PullRef,
+    base: PullBaseRef,
+    #[serde(default)]
+    mergeable: Option<bool>,
+    #[serde(default)]
+    mergeable_state: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PullMergeRequest<'a> {
+    merge_method: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullMergeResponse {
+    merged: bool,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ApiEmailEntry {
     email: String,
     #[serde(default)]
@@ -249,6 +402,133 @@ async fn fetch_primary_email(access_token: &str) -> Result<Option<String>, Strin
     let any_verified = list.iter().find(|e| e.verified).map(|e| e.email.clone());
     Ok(any_verified)
 }
+
+async fn get_origin_remote_url(directory: &str) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .arg("remote")
+        .arg("get-url")
+        .arg("origin")
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn parse_github_remote_url(remote_url: &str) -> Option<GitHubRepoRef> {
+    let trimmed = remote_url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+        let cleaned = rest.trim_end_matches(".git");
+        let (owner, repo) = cleaned.split_once('/')?;
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+        return Some(GitHubRepoRef {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            url: format!("https://github.com/{}/{}", owner, repo),
+        });
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("ssh://git@github.com/") {
+        let cleaned = rest.trim_end_matches(".git");
+        let (owner, repo) = cleaned.split_once('/')?;
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+        return Some(GitHubRepoRef {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            url: format!("https://github.com/{}/{}", owner, repo),
+        });
+    }
+
+    if let Ok(url) = url::Url::parse(trimmed) {
+        if url.host_str() != Some("github.com") {
+            return None;
+        }
+        let path = url.path().trim_matches('/').trim_end_matches(".git");
+        let (owner, repo) = path.split_once('/')?;
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+        return Some(GitHubRepoRef {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            url: format!("https://github.com/{}/{}", owner, repo),
+        });
+    }
+
+    None
+}
+
+async fn resolve_repo_from_directory(directory: &str) -> Option<GitHubRepoRef> {
+    let remote = get_origin_remote_url(directory).await?;
+    parse_github_remote_url(&remote)
+}
+
+async fn github_get_json<T: for<'de> Deserialize<'de>>(
+    url: &str,
+    access_token: &str,
+) -> Result<T, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "OpenChamber")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("unauthorized".to_string());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("GitHub request failed: {}", resp.status()));
+    }
+    resp.json::<T>().await.map_err(|e| e.to_string())
+}
+
+async fn github_post_json<T: for<'de> Deserialize<'de>, B: Serialize>(
+    url: &str,
+    access_token: &str,
+    body: &B,
+) -> Result<T, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "OpenChamber")
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("unauthorized".to_string());
+    }
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("GitHub request failed: {} {}", status, text));
+    }
+    resp.json::<T>().await.map_err(|e| e.to_string())
+}
+
 
 async fn fetch_me(access_token: &str) -> Result<GitHubUserSummary, String> {
     let client = reqwest::Client::new();
@@ -469,4 +749,310 @@ pub async fn github_me(_state: State<'_, DesktopRuntime>) -> Result<GitHubUserSu
         }
         Err(err) => Err(err),
     }
+}
+
+#[tauri::command]
+pub async fn github_pr_status(
+    directory: String,
+    branch: String,
+    _state: State<'_, DesktopRuntime>,
+) -> Result<GitHubPullRequestStatus, String> {
+    let directory = directory.trim().to_string();
+    let branch = branch.trim().to_string();
+    if directory.is_empty() || branch.is_empty() {
+        return Err("directory and branch are required".to_string());
+    }
+
+    let stored = read_auth_file().await;
+    let Some(stored) = stored else {
+        return Ok(GitHubPullRequestStatus {
+            connected: false,
+            repo: None,
+            branch: Some(branch),
+            pr: None,
+            checks: None,
+            can_merge: None,
+        });
+    };
+
+    if stored.access_token.trim().is_empty() {
+        let _ = clear_auth_file().await;
+        return Ok(GitHubPullRequestStatus {
+            connected: false,
+            repo: None,
+            branch: Some(branch),
+            pr: None,
+            checks: None,
+            can_merge: None,
+        });
+    }
+
+    let repo = resolve_repo_from_directory(&directory).await;
+    let Some(repo) = repo else {
+        return Ok(GitHubPullRequestStatus {
+            connected: true,
+            repo: None,
+            branch: Some(branch),
+            pr: None,
+            checks: None,
+            can_merge: Some(false),
+        });
+    };
+
+    let head = format!("{}:{}", repo.owner, branch);
+    let head_encoded = urlencoding::encode(&head);
+    let list_url = format!(
+        "{}/{}/{}/pulls?state=open&head={}&per_page=10",
+        API_PULLS_URL_PREFIX, repo.owner, repo.repo, head_encoded
+    );
+
+    let list = github_get_json::<Vec<PrListItem>>(&list_url, &stored.access_token).await;
+    let list = match list {
+        Ok(v) => v,
+        Err(err) if err == "unauthorized" => {
+            let _ = clear_auth_file().await;
+            return Ok(GitHubPullRequestStatus {
+                connected: false,
+                repo: None,
+                branch: Some(branch),
+                pr: None,
+                checks: None,
+                can_merge: None,
+            });
+        }
+        Err(err) => return Err(err),
+    };
+
+    let Some(first) = list.first() else {
+        return Ok(GitHubPullRequestStatus {
+            connected: true,
+            repo: Some(repo),
+            branch: Some(branch),
+            pr: None,
+            checks: None,
+            can_merge: Some(false),
+        });
+    };
+
+    let pr_url = format!(
+        "{}/{}/{}/pulls/{}",
+        API_PULLS_URL_PREFIX, repo.owner, repo.repo, first.number
+    );
+    let pr = github_get_json::<PullDetailsResponse>(&pr_url, &stored.access_token).await?;
+
+    // Checks summary
+    let mut checks: Option<GitHubChecksSummary> = None;
+    let status_url = format!(
+        "{}/{}/{}/commits/{}/status",
+        API_PULLS_URL_PREFIX, repo.owner, repo.repo, pr.head.sha
+    );
+    if let Ok(status) = github_get_json::<CombinedStatusResponse>(&status_url, &stored.access_token).await {
+        let mut success = 0;
+        let mut failure = 0;
+        let mut pending = 0;
+        for s in status.statuses.iter() {
+            match s.state.as_str() {
+                "success" => success += 1,
+                "failure" | "error" => failure += 1,
+                "pending" => pending += 1,
+                _ => {}
+            }
+        }
+        let total = success + failure + pending;
+        let state = if failure > 0 {
+            "failure"
+        } else if pending > 0 {
+            "pending"
+        } else if total > 0 {
+            "success"
+        } else {
+            "unknown"
+        };
+        checks = Some(GitHubChecksSummary {
+            state: state.to_string(),
+            total,
+            success,
+            failure,
+            pending,
+        });
+    }
+
+    // Permissions (best-effort)
+    let mut can_merge = None;
+    if let Some(user) = stored.user.as_ref() {
+        if !user.login.is_empty() {
+            let perm_url = format!(
+                "{}/{}/{}/collaborators/{}/permission",
+                API_PULLS_URL_PREFIX,
+                repo.owner,
+                repo.repo,
+                urlencoding::encode(&user.login)
+            );
+            if let Ok(perm) = github_get_json::<PermissionResponse>(&perm_url, &stored.access_token).await {
+                let p = perm.permission;
+                can_merge = Some(p == "admin" || p == "maintain" || p == "write");
+            }
+        }
+    }
+
+    let state = if pr.merged {
+        "merged"
+    } else if pr.state == "closed" {
+        "closed"
+    } else {
+        "open"
+    };
+
+    Ok(GitHubPullRequestStatus {
+        connected: true,
+        repo: Some(repo),
+        branch: Some(branch),
+        pr: Some(GitHubPullRequestSummary {
+            number: pr.number,
+            title: pr.title,
+            url: pr.html_url,
+            state: state.to_string(),
+            draft: pr.draft,
+            base: pr.base.ref_name,
+            head: pr.head.ref_name,
+            head_sha: Some(pr.head.sha),
+            mergeable: pr.mergeable,
+            mergeable_state: pr.mergeable_state,
+        }),
+        checks,
+        can_merge,
+    })
+}
+
+#[tauri::command]
+pub async fn github_pr_create(
+    directory: String,
+    title: String,
+    head: String,
+    base: String,
+    body: Option<String>,
+    draft: Option<bool>,
+    _state: State<'_, DesktopRuntime>,
+) -> Result<GitHubPullRequestSummary, String> {
+    let directory = directory.trim().to_string();
+    let title = title.trim().to_string();
+    let head = head.trim().to_string();
+    let base = base.trim().to_string();
+    if directory.is_empty() || title.is_empty() || head.is_empty() || base.is_empty() {
+        return Err("directory, title, head, base are required".to_string());
+    }
+
+    let stored = read_auth_file().await;
+    let Some(stored) = stored else {
+        return Err("GitHub not connected".to_string());
+    };
+    if stored.access_token.trim().is_empty() {
+        let _ = clear_auth_file().await;
+        return Err("GitHub not connected".to_string());
+    }
+
+    let repo = resolve_repo_from_directory(&directory)
+        .await
+        .ok_or_else(|| "Unable to resolve GitHub repo from git remote".to_string())?;
+
+    let url = format!("{}/{}/{}/pulls", API_PULLS_URL_PREFIX, repo.owner, repo.repo);
+    let request = PullCreateRequest {
+        title: &title,
+        head: &head,
+        base: &base,
+        body: body.as_deref(),
+        draft,
+    };
+
+    let created = github_post_json::<PullCreateResponse, _>(&url, &stored.access_token, &request).await?;
+
+    Ok(GitHubPullRequestSummary {
+        number: created.number,
+        title: created.title,
+        url: created.html_url,
+        state: if created.state == "closed" {
+            "closed".to_string()
+        } else {
+            "open".to_string()
+        },
+        draft: created.draft,
+        base: created.base.ref_name,
+        head: created.head.ref_name,
+        head_sha: Some(created.head.sha),
+        mergeable: created.mergeable,
+        mergeable_state: created.mergeable_state,
+    })
+}
+
+#[tauri::command]
+pub async fn github_pr_merge(
+    directory: String,
+    number: u64,
+    method: String,
+    _state: State<'_, DesktopRuntime>,
+) -> Result<GitHubPullRequestMergeResult, String> {
+    let directory = directory.trim().to_string();
+    let method = method.trim().to_string();
+    if directory.is_empty() {
+        return Err("directory is required".to_string());
+    }
+    if number == 0 {
+        return Err("number is required".to_string());
+    }
+
+    let stored = read_auth_file().await;
+    let Some(stored) = stored else {
+        return Err("GitHub not connected".to_string());
+    };
+    if stored.access_token.trim().is_empty() {
+        let _ = clear_auth_file().await;
+        return Err("GitHub not connected".to_string());
+    }
+
+    let repo = resolve_repo_from_directory(&directory)
+        .await
+        .ok_or_else(|| "Unable to resolve GitHub repo from git remote".to_string())?;
+
+    let url = format!(
+        "{}/{}/{}/pulls/{}/merge",
+        API_PULLS_URL_PREFIX, repo.owner, repo.repo, number
+    );
+    let merge_method = if method.is_empty() { "merge" } else { method.as_str() };
+    let request = PullMergeRequest { merge_method };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .put(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {}", stored.access_token))
+        .header("User-Agent", "OpenChamber")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let _ = clear_auth_file().await;
+        return Err("GitHub token expired or revoked".to_string());
+    }
+    if resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err("Not authorized to merge this PR".to_string());
+    }
+    if resp.status() == reqwest::StatusCode::METHOD_NOT_ALLOWED
+        || resp.status() == reqwest::StatusCode::CONFLICT
+    {
+        return Ok(GitHubPullRequestMergeResult {
+            merged: false,
+            message: Some("PR not mergeable".to_string()),
+        });
+    }
+    if !resp.status().is_success() {
+        return Err(format!("GitHub merge failed: {}", resp.status()));
+    }
+
+    let parsed = resp.json::<PullMergeResponse>().await.map_err(|e| e.to_string())?;
+    Ok(GitHubPullRequestMergeResult {
+        merged: parsed.merged,
+        message: parsed.message,
+    })
 }
