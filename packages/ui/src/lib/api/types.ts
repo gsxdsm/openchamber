@@ -478,6 +478,42 @@ export interface PushAPI {
   setVisibility(payload: { visible: boolean }): Promise<{ ok: true } | null>;
 }
 
+export type GitHubUserSummary = {
+  login: string;
+  id?: number;
+  avatarUrl?: string;
+  name?: string;
+  email?: string;
+};
+
+export type GitHubAuthStatus = {
+  connected: boolean;
+  user?: GitHubUserSummary | null;
+  scope?: string;
+};
+
+export type GitHubDeviceFlowStart = {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string;
+  expiresIn: number;
+  interval: number;
+  scope?: string;
+};
+
+export type GitHubDeviceFlowComplete =
+  | { connected: true; user: GitHubUserSummary; scope?: string }
+  | { connected: false; status?: string; error?: string };
+
+export interface GitHubAPI {
+  authStatus(): Promise<GitHubAuthStatus>;
+  authStart(): Promise<GitHubDeviceFlowStart>;
+  authComplete(deviceCode: string): Promise<GitHubDeviceFlowComplete>;
+  authDisconnect(): Promise<{ removed: boolean }>;
+  me?(): Promise<GitHubUserSummary>;
+}
+
 export interface RuntimeAPIs {
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
@@ -486,6 +522,7 @@ export interface RuntimeAPIs {
   settings: SettingsAPI;
   permissions: PermissionsAPI;
   notifications: NotificationsAPI;
+  github?: GitHubAPI;
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
   tools: ToolsAPI;

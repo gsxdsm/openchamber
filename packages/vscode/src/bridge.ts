@@ -12,6 +12,16 @@ import {
   installSkillsFromRepository as installSkillsFromGit,
   type SkillsCatalogSourceConfig,
 } from './skillsCatalog';
+import {
+  DEFAULT_GITHUB_CLIENT_ID,
+  DEFAULT_GITHUB_SCOPES,
+  clearGitHubAuth,
+  exchangeDeviceCode,
+  fetchMe,
+  readGitHubAuth,
+  startDeviceFlow,
+  writeGitHubAuth,
+} from './githubAuth';
 
 export interface BridgeRequest {
   id: string;
@@ -75,6 +85,13 @@ const readSettings = (ctx?: BridgeContext) => {
     lastDirectory: workspaceFolder,
     ...restStored,
   };
+};
+
+const readStringField = (value: unknown, key: string): string => {
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  const candidate = record[key];
+  return typeof candidate === 'string' ? candidate.trim() : '';
 };
 
 const persistSettings = async (changes: Record<string, unknown>, ctx?: BridgeContext) => {
@@ -875,6 +892,115 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         const changes = (payload as Record<string, unknown>) || {};
         const updated = await persistSettings(changes, ctx);
         return { id, type, success: true, data: updated };
+      }
+
+      case 'api:github/auth:status': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const stored = await readGitHubAuth(context);
+        if (!stored?.accessToken) {
+          return { id, type, success: true, data: { connected: false } };
+        }
+
+        try {
+          const user = await fetchMe(stored.accessToken);
+          return { id, type, success: true, data: { connected: true, user, scope: stored.scope } };
+        } catch (error: unknown) {
+          const status = (error && typeof error === 'object' && 'status' in error) ? (error as { status?: number }).status : undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (status === 401 || message === 'unauthorized') {
+            await clearGitHubAuth(context);
+            return { id, type, success: true, data: { connected: false } };
+          }
+          return { id, type, success: false, error: message };
+        }
+      }
+
+      case 'api:github/auth:start': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const settings = readSettings(ctx);
+        const clientId = readStringField(settings, 'githubClientId') || DEFAULT_GITHUB_CLIENT_ID;
+        const scopes = readStringField(settings, 'githubScopes') || DEFAULT_GITHUB_SCOPES;
+        const flow = await startDeviceFlow(clientId, scopes);
+        return { id, type, success: true, data: flow };
+      }
+
+      case 'api:github/auth:complete': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const deviceCode = readStringField(payload, 'deviceCode');
+        if (!deviceCode) return { id, type, success: false, error: 'deviceCode is required' };
+
+        const settings = readSettings(ctx);
+        const clientId = readStringField(settings, 'githubClientId') || DEFAULT_GITHUB_CLIENT_ID;
+
+        const token = await exchangeDeviceCode(clientId, deviceCode);
+        const tokenRecord = token && typeof token === 'object' ? (token as Record<string, unknown>) : null;
+        const tokenError = typeof tokenRecord?.error === 'string' ? tokenRecord.error : '';
+        const tokenErrorDescription = typeof tokenRecord?.error_description === 'string' ? tokenRecord.error_description : '';
+        if (tokenError) {
+          return {
+            id,
+            type,
+            success: true,
+            data: {
+              connected: false,
+              status: tokenError,
+              error: tokenErrorDescription || tokenError,
+            },
+          };
+        }
+        const accessToken = typeof tokenRecord?.access_token === 'string' ? tokenRecord.access_token : '';
+        if (!accessToken) {
+          return { id, type, success: false, error: 'Missing access_token from GitHub' };
+        }
+
+        const user = await fetchMe(accessToken);
+        await writeGitHubAuth(context, {
+          accessToken,
+          scope: typeof tokenRecord?.scope === 'string' ? tokenRecord.scope : undefined,
+          tokenType: typeof tokenRecord?.token_type === 'string' ? tokenRecord.token_type : undefined,
+          createdAt: Date.now(),
+          user,
+        });
+
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            connected: true,
+            user,
+            scope: typeof tokenRecord?.scope === 'string' ? tokenRecord.scope : undefined,
+          },
+        };
+      }
+
+      case 'api:github/auth:disconnect': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const removed = await clearGitHubAuth(context);
+        return { id, type, success: true, data: { removed } };
+      }
+
+      case 'api:github/me': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const stored = await readGitHubAuth(context);
+        if (!stored?.accessToken) return { id, type, success: false, error: 'GitHub not connected' };
+        try {
+          const user = await fetchMe(stored.accessToken);
+          return { id, type, success: true, data: user };
+        } catch (error: unknown) {
+          const status = (error && typeof error === 'object' && 'status' in error) ? (error as { status?: number }).status : undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (status === 401 || message === 'unauthorized') {
+            await clearGitHubAuth(context);
+            return { id, type, success: false, error: 'GitHub token expired or revoked' };
+          }
+          return { id, type, success: false, error: message };
+        }
       }
 
       case 'api:config/reload': {

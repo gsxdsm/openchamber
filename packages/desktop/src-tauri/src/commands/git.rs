@@ -2042,7 +2042,9 @@ pub async fn get_remote_url(
         .map_err(|e| e.to_string())?;
 
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
-    let url = run_git(&["remote", "get-url", &remote_name], &root).await.ok();
+    let url = run_git(&["remote", "get-url", &remote_name], &root)
+        .await
+        .ok();
 
     Ok(url.filter(|s| !s.is_empty()))
 }
@@ -2162,7 +2164,11 @@ pub async fn set_git_identity(
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        let _ = run_git(&["config", "--local", "--unset", "credential.helper"], &root).await;
+        let _ = run_git(
+            &["config", "--local", "--unset", "credential.helper"],
+            &root,
+        )
+        .await;
     } else if auth_type == "token" && profile.host.is_some() {
         run_git(&["config", "--local", "credential.helper", "store"], &root)
             .await

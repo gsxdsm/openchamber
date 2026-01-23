@@ -721,6 +721,18 @@ const sanitizeSettingsUpdate = (payload) => {
   if (typeof candidate.markdownDisplayMode === 'string' && candidate.markdownDisplayMode.length > 0) {
     result.markdownDisplayMode = candidate.markdownDisplayMode;
   }
+  if (typeof candidate.githubClientId === 'string') {
+    const trimmed = candidate.githubClientId.trim();
+    if (trimmed.length > 0) {
+      result.githubClientId = trimmed;
+    }
+  }
+  if (typeof candidate.githubScopes === 'string') {
+    const trimmed = candidate.githubScopes.trim();
+    if (trimmed.length > 0) {
+      result.githubScopes = trimmed;
+    }
+  }
   if (typeof candidate.showReasoningTraces === 'boolean') {
     result.showReasoningTraces = candidate.showReasoningTraces;
   }
@@ -3838,6 +3850,207 @@ async function main(options = {}) {
     }
     return authLibrary;
   };
+
+  // ================= GitHub OAuth (Device Flow) =================
+
+  // Note: scopes may be overridden via OPENCHAMBER_GITHUB_SCOPES or settings.json (see github-auth.js).
+
+  let githubLibraries = null;
+  const getGitHubLibraries = async () => {
+    if (!githubLibraries) {
+      const [auth, device, octokit] = await Promise.all([
+        import('./lib/github-auth.js'),
+        import('./lib/github-device-flow.js'),
+        import('./lib/github-octokit.js'),
+      ]);
+      githubLibraries = { ...auth, ...device, ...octokit };
+    }
+    return githubLibraries;
+  };
+
+  const getGitHubUserSummary = async (octokit) => {
+    const me = await octokit.rest.users.getAuthenticated();
+
+    let email = typeof me.data.email === 'string' ? me.data.email : null;
+    if (!email) {
+      try {
+        const emails = await octokit.rest.users.listEmailsForAuthenticatedUser({ per_page: 100 });
+        const list = Array.isArray(emails?.data) ? emails.data : [];
+        const primaryVerified = list.find((e) => e && e.primary && e.verified && typeof e.email === 'string');
+        const anyVerified = list.find((e) => e && e.verified && typeof e.email === 'string');
+        email = primaryVerified?.email || anyVerified?.email || null;
+      } catch {
+        // ignore (scope might be missing)
+      }
+    }
+
+    return {
+      login: me.data.login,
+      id: me.data.id,
+      avatarUrl: me.data.avatar_url,
+      name: typeof me.data.name === 'string' ? me.data.name : null,
+      email,
+    };
+  };
+
+  app.get('/api/github/auth/status', async (_req, res) => {
+    try {
+      const { getGitHubAuth, getOctokitOrNull, clearGitHubAuth } = await getGitHubLibraries();
+      const auth = getGitHubAuth();
+      if (!auth?.accessToken) {
+        return res.json({ connected: false });
+      }
+
+      const octokit = getOctokitOrNull();
+      if (!octokit) {
+        return res.json({ connected: false });
+      }
+
+      let user = null;
+      try {
+        user = await getGitHubUserSummary(octokit);
+      } catch (error) {
+        if (error?.status === 401) {
+          clearGitHubAuth();
+          return res.json({ connected: false });
+        }
+      }
+
+      const fallback = auth.user;
+      const mergedUser = user || fallback;
+
+      return res.json({
+        connected: true,
+        user: mergedUser,
+        scope: auth.scope,
+      });
+    } catch (error) {
+      console.error('Failed to get GitHub auth status:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get GitHub auth status' });
+    }
+  });
+
+  app.post('/api/github/auth/start', async (_req, res) => {
+    try {
+      const { getGitHubClientId, getGitHubScopes, startDeviceFlow } = await getGitHubLibraries();
+      const clientId = getGitHubClientId();
+      if (!clientId) {
+        return res.status(400).json({
+          error: 'GitHub OAuth client not configured. Set OPENCHAMBER_GITHUB_CLIENT_ID.',
+        });
+      }
+
+      const scope = getGitHubScopes();
+
+      const payload = await startDeviceFlow({
+        clientId,
+        scope,
+      });
+
+      return res.json({
+        deviceCode: payload.device_code,
+        userCode: payload.user_code,
+        verificationUri: payload.verification_uri,
+        verificationUriComplete: payload.verification_uri_complete,
+        expiresIn: payload.expires_in,
+        interval: payload.interval,
+        scope,
+      });
+    } catch (error) {
+      console.error('Failed to start GitHub device flow:', error);
+      return res.status(500).json({ error: error.message || 'Failed to start GitHub device flow' });
+    }
+  });
+
+  app.post('/api/github/auth/complete', async (req, res) => {
+    try {
+      const { getGitHubClientId, exchangeDeviceCode, setGitHubAuth } = await getGitHubLibraries();
+      const clientId = getGitHubClientId();
+      if (!clientId) {
+        return res.status(400).json({
+          error: 'GitHub OAuth client not configured. Set OPENCHAMBER_GITHUB_CLIENT_ID.',
+        });
+      }
+
+      const deviceCode = typeof req.body?.deviceCode === 'string'
+        ? req.body.deviceCode
+        : (typeof req.body?.device_code === 'string' ? req.body.device_code : '');
+
+      if (!deviceCode) {
+        return res.status(400).json({ error: 'deviceCode is required' });
+      }
+
+      const payload = await exchangeDeviceCode({ clientId, deviceCode });
+
+      if (payload?.error) {
+        return res.json({
+          connected: false,
+          status: payload.error,
+          error: payload.error_description || payload.error,
+        });
+      }
+
+      const accessToken = payload?.access_token;
+      if (!accessToken) {
+        return res.status(500).json({ error: 'Missing access_token from GitHub' });
+      }
+
+      const { Octokit } = await import('@octokit/rest');
+      const octokit = new Octokit({ auth: accessToken });
+      const user = await getGitHubUserSummary(octokit);
+
+      setGitHubAuth({
+        accessToken,
+        scope: typeof payload.scope === 'string' ? payload.scope : '',
+        tokenType: typeof payload.token_type === 'string' ? payload.token_type : 'bearer',
+        user,
+      });
+
+      return res.json({
+        connected: true,
+        user,
+        scope: typeof payload.scope === 'string' ? payload.scope : '',
+      });
+    } catch (error) {
+      console.error('Failed to complete GitHub device flow:', error);
+      return res.status(500).json({ error: error.message || 'Failed to complete GitHub device flow' });
+    }
+  });
+
+  app.delete('/api/github/auth', async (_req, res) => {
+    try {
+      const { clearGitHubAuth } = await getGitHubLibraries();
+      const removed = clearGitHubAuth();
+      return res.json({ success: true, removed });
+    } catch (error) {
+      console.error('Failed to disconnect GitHub:', error);
+      return res.status(500).json({ error: error.message || 'Failed to disconnect GitHub' });
+    }
+  });
+
+  app.get('/api/github/me', async (_req, res) => {
+    try {
+      const { getOctokitOrNull, clearGitHubAuth } = await getGitHubLibraries();
+      const octokit = getOctokitOrNull();
+      if (!octokit) {
+        return res.status(401).json({ error: 'GitHub not connected' });
+      }
+      let user;
+      try {
+        user = await getGitHubUserSummary(octokit);
+      } catch (error) {
+        if (error?.status === 401) {
+          clearGitHubAuth();
+          return res.status(401).json({ error: 'GitHub token expired or revoked' });
+        }
+        throw error;
+      }
+      return res.json(user);
+    } catch (error) {
+      console.error('Failed to fetch GitHub user:', error);
+      return res.status(500).json({ error: error.message || 'Failed to fetch GitHub user' });
+    }
+  });
 
   app.get('/api/provider/:providerId/source', async (req, res) => {
     try {
