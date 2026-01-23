@@ -4858,7 +4858,7 @@ async function main(options = {}) {
         }
       }
       if (diffs.length === 0) {
-        return res.status(400).json({ error: 'No diffs available for selected files' });
+        return res.status(400).json({ error: 'No diffs available for base...head' });
       }
 
       const diffSummaries = diffs.map(({ path, diff }) => `FILE: ${path}\n${diff}`).join('\n\n');
