@@ -43,16 +43,21 @@ interface TurnGroupingStaticData {
     messageNeighbors: Map<string, NeighborInfo>;
 }
 
-// Dynamic data that changes during streaming
-interface TurnGroupingDynamicData {
-    sessionIsWorking: boolean;
+// UI state that changes on user interaction (expand/collapse)
+interface TurnGroupingUiStateData {
     turnUiStates: Map<string, { isExpanded: boolean }>;
     toggleGroup: (turnId: string) => void;
 }
 
+// Streaming state that changes frequently during assistant response
+interface TurnGroupingStreamingData {
+    sessionIsWorking: boolean;
+}
+
 // Separate contexts to prevent unnecessary re-renders
 const TurnGroupingStaticContext = React.createContext<TurnGroupingStaticData | null>(null);
-const TurnGroupingDynamicContext = React.createContext<TurnGroupingDynamicData | null>(null);
+const TurnGroupingUiStateContext = React.createContext<TurnGroupingUiStateData | null>(null);
+const TurnGroupingStreamingContext = React.createContext<TurnGroupingStreamingData | null>(null);
 
 // Track staticData reference to clear cache when it changes
 let lastStaticDataRef: TurnGroupingStaticData | null = null;
@@ -60,10 +65,11 @@ const contextCache = new Map<string, TurnGroupingContextType>();
 
 export const useTurnGroupingContextForMessage = (messageId: string): TurnGroupingContextType | undefined => {
     const staticData = React.useContext(TurnGroupingStaticContext);
-    const dynamicData = React.useContext(TurnGroupingDynamicContext);
+    const uiStateData = React.useContext(TurnGroupingUiStateContext);
+    const streamingData = React.useContext(TurnGroupingStreamingContext);
     
     return React.useMemo(() => {
-        if (!staticData || !dynamicData) return undefined;
+        if (!staticData || !uiStateData || !streamingData) return undefined;
         
         // Clear cache when staticData changes (new messages arrived)
         if (lastStaticDataRef !== staticData) {
@@ -83,7 +89,7 @@ export const useTurnGroupingContextForMessage = (messageId: string): TurnGroupin
         // Other turns don't need to re-render when streaming state changes
         const isLastTurn = staticData.lastTurnId === turn.turnId;
         const cacheKey = isLastTurn 
-            ? `${messageId}-${staticData.lastTurnId}-${dynamicData.sessionIsWorking}`
+            ? `${messageId}-${staticData.lastTurnId}-${streamingData.sessionIsWorking}`
             : `${messageId}-static`;
         
         const cached = contextCache.get(cacheKey);
@@ -103,9 +109,9 @@ export const useTurnGroupingContextForMessage = (messageId: string): TurnGroupin
         const isLastAssistantInTurn = messageId === lastAssistantId;
         const headerMessageId = firstAssistantId;
         
-        const uiState = dynamicData.turnUiStates.get(turn.turnId) ?? { isExpanded: staticData.defaultActivityExpanded };
+        const uiState = uiStateData.turnUiStates.get(turn.turnId) ?? { isExpanded: staticData.defaultActivityExpanded };
         // Only the last turn can be "working"
-        const isTurnWorking = isLastTurn && dynamicData.sessionIsWorking;
+        const isTurnWorking = isLastTurn && streamingData.sessionIsWorking;
         
         const userTimeInfo = turn.userMessage.info.time as { created?: number } | undefined;
         const userMessageCreatedAt = typeof userTimeInfo?.created === 'number' ? userTimeInfo.created : undefined;
@@ -124,7 +130,7 @@ export const useTurnGroupingContextForMessage = (messageId: string): TurnGroupin
             userMessageCreatedAt,
             isWorking: isTurnWorking,
             isGroupExpanded: uiState.isExpanded,
-            toggleGroup: () => dynamicData.toggleGroup(turn.turnId),
+            toggleGroup: () => uiStateData.toggleGroup(turn.turnId),
         };
         
         // Cache with size limit
@@ -135,7 +141,7 @@ export const useTurnGroupingContextForMessage = (messageId: string): TurnGroupin
         contextCache.set(cacheKey, context);
         
         return context;
-    }, [staticData, dynamicData, messageId]);
+    }, [staticData, uiStateData, streamingData, messageId]);
 };
 
 // Hook to get neighbor messages - uses context instead of passed messages array
@@ -155,13 +161,15 @@ export const useLastTurnMessageIds = (): Set<string> => {
     return staticData?.lastTurnMessageIds ?? new Set();
 };
 
-// Static-only version of turn grouping context - does NOT subscribe to dynamic context
+// Static-only version of turn grouping context - does NOT subscribe to streaming context
 // Use this for messages NOT in the last turn to avoid re-renders during streaming
+// Still subscribes to UI state context for expand/collapse functionality
 export const useTurnGroupingContextStatic = (messageId: string): TurnGroupingContextType | undefined => {
     const staticData = React.useContext(TurnGroupingStaticContext);
+    const uiStateData = React.useContext(TurnGroupingUiStateContext);
     
     return React.useMemo(() => {
-        if (!staticData) return undefined;
+        if (!staticData || !uiStateData) return undefined;
         
         const turn = staticData.messageToTurn.get(messageId);
         if (!turn) return undefined;
@@ -185,10 +193,12 @@ export const useTurnGroupingContextStatic = (messageId: string): TurnGroupingCon
         const isLastAssistantInTurn = messageId === lastAssistantId;
         const headerMessageId = firstAssistantId;
         
+        const uiState = uiStateData.turnUiStates.get(turn.turnId) ?? { isExpanded: staticData.defaultActivityExpanded };
+        
         const userTimeInfo = turn.userMessage.info.time as { created?: number } | undefined;
         const userMessageCreatedAt = typeof userTimeInfo?.created === 'number' ? userTimeInfo.created : undefined;
         
-        // For static context, isWorking is always false and isGroupExpanded uses default
+        // For static context, isWorking is always false (turn is completed)
         const context: TurnGroupingContextType = {
             turnId: turn.turnId,
             isFirstAssistantInTurn,
@@ -201,13 +211,13 @@ export const useTurnGroupingContextStatic = (messageId: string): TurnGroupingCon
             hasReasoning,
             diffStats,
             userMessageCreatedAt,
-            isWorking: false, // Static context - turn is completed
-            isGroupExpanded: staticData.defaultActivityExpanded,
-            toggleGroup: () => {}, // No-op for static - will be overridden if needed
+            isWorking: false,
+            isGroupExpanded: uiState.isExpanded,
+            toggleGroup: () => uiStateData.toggleGroup(turn.turnId),
         };
         
         return context;
-    }, [staticData, messageId]);
+    }, [staticData, uiStateData, messageId]);
 };
 
 interface TurnGroupingProviderProps {
@@ -530,18 +540,24 @@ export const TurnGroupingProvider: React.FC<TurnGroupingProviderProps> = ({ mess
         });
     }, [defaultActivityExpanded]);
 
-    // Dynamic data - changes during streaming and UI interactions
-    const dynamicValue = React.useMemo<TurnGroupingDynamicData>(() => ({
-        sessionIsWorking,
+    // UI state - changes on user interaction (expand/collapse)
+    const uiStateValue = React.useMemo<TurnGroupingUiStateData>(() => ({
         turnUiStates,
         toggleGroup,
-    }), [sessionIsWorking, turnUiStates, toggleGroup]);
+    }), [turnUiStates, toggleGroup]);
+
+    // Streaming state - changes frequently during assistant response
+    const streamingValue = React.useMemo<TurnGroupingStreamingData>(() => ({
+        sessionIsWorking,
+    }), [sessionIsWorking]);
 
     return (
         <TurnGroupingStaticContext.Provider value={staticValue}>
-            <TurnGroupingDynamicContext.Provider value={dynamicValue}>
-                {children}
-            </TurnGroupingDynamicContext.Provider>
+            <TurnGroupingUiStateContext.Provider value={uiStateValue}>
+                <TurnGroupingStreamingContext.Provider value={streamingValue}>
+                    {children}
+                </TurnGroupingStreamingContext.Provider>
+            </TurnGroupingUiStateContext.Provider>
         </TurnGroupingStaticContext.Provider>
     );
 };
