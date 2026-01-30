@@ -67,6 +67,7 @@ interface UIStore {
   isImagePreviewOpen: boolean;
   nativeNotificationsEnabled: boolean;
   notificationMode: 'always' | 'hidden-only';
+  notifyOnSubtasks: boolean;
 
   showTerminalQuickKeysOnDesktop: boolean;
 
@@ -124,6 +125,7 @@ interface UIStore {
   setNativeNotificationsEnabled: (value: boolean) => void;
   setNotificationMode: (mode: 'always' | 'hidden-only') => void;
   setShowTerminalQuickKeysOnDesktop: (value: boolean) => void;
+  setNotifyOnSubtasks: (value: boolean) => void;
   openMultiRunLauncher: () => void;
   openMultiRunLauncherWithPrompt: (prompt: string) => void;
 }
@@ -179,6 +181,7 @@ export const useUIStore = create<UIStore>()(
         isImagePreviewOpen: false,
         nativeNotificationsEnabled: false,
         notificationMode: 'hidden-only',
+        notifyOnSubtasks: true,
 
         showTerminalQuickKeysOnDesktop: false,
 
@@ -602,6 +605,10 @@ export const useUIStore = create<UIStore>()(
         setShowTerminalQuickKeysOnDesktop: (value) => {
           set({ showTerminalQuickKeysOnDesktop: value });
         },
+
+        setNotifyOnSubtasks: (value) => {
+          set({ notifyOnSubtasks: value });
+        },
       }),
       {
         name: 'ui-store',
@@ -637,6 +644,7 @@ export const useUIStore = create<UIStore>()(
           nativeNotificationsEnabled: state.nativeNotificationsEnabled,
           notificationMode: state.notificationMode,
           showTerminalQuickKeysOnDesktop: state.showTerminalQuickKeysOnDesktop,
+          notifyOnSubtasks: state.notifyOnSubtasks,
         })
       }
     ),
