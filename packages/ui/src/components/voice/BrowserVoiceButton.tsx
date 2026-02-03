@@ -12,7 +12,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useBrowserVoice } from '@/hooks/useBrowserVoice';
-import { useVoiceDiscoverability } from '@/hooks/useVoiceDiscoverability';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
 import { Button } from '@/components/ui/button';
@@ -29,6 +28,7 @@ import {
     RiVolumeUpLine,
 } from '@remixicon/react';
 import { VoiceStatusIndicator } from './VoiceStatusIndicator';
+import { toast } from '@/components/ui/toast';
 
 // Status text for accessibility and labels
 const statusLabels: Record<string, string> = {
@@ -67,9 +67,7 @@ export function BrowserVoiceButton() {
         isMobile,
         voiceProvider,
     } = useBrowserVoice();
-    const { isFirstTime, markDiscovered, showHint } = useVoiceDiscoverability();
     
-    const [tooltipOpen, setTooltipOpen] = useState(false);
     const [isPressing, setIsPressing] = useState(false);
     
     // Refs for touch handling
@@ -116,7 +114,22 @@ export function BrowserVoiceButton() {
 
     // Button variant based on state
     const isSpeaking = status === 'speaking';
-    const variant = isError ? 'destructive' : isSpeaking ? 'default' : isActive ? 'default' : 'ghost';
+    const variant = isSpeaking ? 'default' : isActive ? 'default' : 'ghost';
+
+    // Show toast notification when voice error occurs
+    useEffect(() => {
+        if (isError && error) {
+            // Improve error message for getUserMedia errors (likely HTTPS issue)
+            let displayError = error;
+            if (error.includes("getUserMedia") || error.includes("Cannot read properties of undefined")) {
+                displayError = "Voice requires a secure connection (HTTPS) or localhost. Please use HTTPS or access via localhost.";
+            }
+            
+            toast.error(displayError, {
+                duration: 5000,
+            });
+        }
+    }, [isError, error]);
 
     // Status text for accessibility
     const statusText = isError
@@ -127,8 +140,12 @@ export function BrowserVoiceButton() {
 
     // Tooltip content based on state
     const getTooltipContent = () => {
-        if (showHint) {
-            return 'Try voice mode! Click to start speaking';
+        if (isError && error) {
+            // Improve error message for getUserMedia errors (likely HTTPS issue)
+            if (error.includes("getUserMedia") || error.includes("Cannot read properties of undefined")) {
+                return "Voice requires a secure connection (HTTPS) or localhost. Please use HTTPS or access via localhost.";
+            }
+            return error;
         }
         if (isActive) {
             return 'Stop voice conversation';
@@ -141,11 +158,6 @@ export function BrowserVoiceButton() {
 
     // Handle voice activation (used by both click and touch)
     const activateVoice = useCallback(async () => {
-        // Mark as discovered on any interaction
-        if (isFirstTime) {
-            markDiscovered();
-        }
-
         if (isActive) {
             stopVoice();
         } else if (status !== 'error') {
@@ -176,7 +188,7 @@ export function BrowserVoiceButton() {
                 }
             }
         }
-    }, [isFirstTime, isActive, status, startVoice, stopVoice, markDiscovered, isMobile]);
+    }, [isActive, status, startVoice, stopVoice, isMobile]);
 
     // Handle Shift+Click to toggle conversation mode
     const handleClick = useCallback(async (e: React.MouseEvent) => {
@@ -244,12 +256,7 @@ export function BrowserVoiceButton() {
         setIsPressing(false);
     }, []);
 
-    // Auto-show tooltip for first-time users
-    useEffect(() => {
-        if (showHint) {
-            setTooltipOpen(true);
-        }
-    }, [showHint]);
+
 
     // If voice mode is disabled, don't render anything
     if (!voiceModeEnabled) {
@@ -258,16 +265,33 @@ export function BrowserVoiceButton() {
 
     // If not supported, show disabled button with tooltip
     if (!isSupported) {
+        const supportDetails = browserVoiceService.getSupportDetails();
+        const tooltipMessage = !supportDetails.secureContext
+            ? 'Voice requires HTTPS or localhost. Please use a secure connection.'
+            : !supportDetails.recognition
+                ? 'Speech recognition not supported in this browser. Try Chrome, Edge, or Safari.'
+                : !supportDetails.synthesis
+                    ? 'Speech synthesis not supported in this browser.'
+                    : 'Voice not supported in this browser';
+
         return (
-            <Button
-                size="icon"
-                variant="ghost"
-                disabled
-                aria-label="Voice not supported in this browser"
-                title="Voice not supported in this browser"
-            >
-                <RiMicOffLine className="w-5 h-5 opacity-50" />
-            </Button>
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            disabled
+                            aria-label={tooltipMessage}
+                        >
+                            <RiMicOffLine className="w-5 h-5 opacity-50" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="center">
+                        <p className="max-w-[200px] text-center">{tooltipMessage}</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
         );
     }
 
@@ -296,7 +320,7 @@ export function BrowserVoiceButton() {
 
             {/* Voice button with tooltip */}
             <TooltipProvider>
-                <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
+                <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                             size="icon"
@@ -311,7 +335,6 @@ export function BrowserVoiceButton() {
                                 ${isMobile ? 'min-w-[32px] min-h-[32px] h-8 w-8' : 'min-w-[44px] min-h-[44px]'}
                                 touch-manipulation
                                 ${isPressing ? 'scale-95 opacity-80' : ''}
-                                ${showHint && isIdle ? 'ring-2 ring-primary ring-offset-2 animate-pulse' : ''}
                                 ${conversationMode && isIdle && isMobile ? 'ring-1 ring-primary/50' : ''}
                             `}
                             style={{
@@ -329,7 +352,7 @@ export function BrowserVoiceButton() {
                                 )
                             ) : (
                                 <VoiceStatusIndicator
-                                    status={status}
+                                    status={isError ? 'idle' : status}
                                     size={isMobile ? 'sm' : 'md'}
                                     conversationMode={conversationMode}
                                 />
@@ -343,7 +366,7 @@ export function BrowserVoiceButton() {
             </TooltipProvider>
 
             {/* Conversation mode toggle button */}
-            {status === 'idle' && (
+            {(status === 'idle' || status === 'error') && (
                 <Button
                     size="icon"
                     variant={conversationMode ? 'default' : 'ghost'}
