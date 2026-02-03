@@ -13,7 +13,7 @@ import { isEmptyTextPart, extractTextContent } from './partUtils';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine } from '@remixicon/react';
+import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine, RiVolumeUpLine, RiStopLine } from '@remixicon/react';
 import { ArrowsMerge } from '@/components/icons/ArrowsMerge';
 import type { ContentChangeReason } from '@/hooks/useChatScrollManager';
 
@@ -23,6 +23,9 @@ import { useSessionStore } from '@/stores/useSessionStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { MULTIRUN_EXECUTION_FORK_PROMPT_META_TEXT } from '@/lib/messages/executionMeta';
+import { useMessageTTS } from '@/hooks/useMessageTTS';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { TextSelectionMenu } from './TextSelectionMenu';
 
 const formatTurnDuration = (durationMs: number): string => {
     const totalSeconds = durationMs / 1000;
@@ -287,6 +290,7 @@ const AssistantMessageBody: React.FC<Omit<MessageBodyProps, 'isUser'>> = ({
     void _allowAnimation;
     const [copyHintVisible, setCopyHintVisible] = React.useState(false);
     const copyHintTimeoutRef = React.useRef<number | null>(null);
+    const messageContentRef = React.useRef<HTMLDivElement>(null);
 
     const canCopyMessage = Boolean(onCopyMessage);
     const isMessageCopied = Boolean(copiedMessage);
@@ -314,6 +318,10 @@ const AssistantMessageBody: React.FC<Omit<MessageBodyProps, 'isUser'>> = ({
     const openMultiRunLauncherWithPrompt = useUIStore((state) => state.openMultiRunLauncherWithPrompt);
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
+    
+    // TTS for message playback
+    const { isPlaying: isTTSPlaying, play: playTTS, stop: stopTTS } = useMessageTTS();
+    const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
 
 
     const hasTools = toolParts.length > 0;
@@ -498,6 +506,24 @@ const AssistantMessageBody: React.FC<Omit<MessageBodyProps, 'isUser'>> = ({
             openMultiRunLauncherWithPrompt(prefilledPrompt);
         },
         [assistantTextParts, openMultiRunLauncherWithPrompt]
+    );
+
+    const handleTTSClick = React.useCallback(
+        (event: React.MouseEvent<HTMLButtonElement>) => {
+            event.stopPropagation();
+            event.preventDefault();
+            
+            if (isTTSPlaying) {
+                stopTTS();
+                return;
+            }
+            
+            const messageText = flattenAssistantTextParts(assistantTextParts);
+            if (messageText.trim()) {
+                void playTTS(messageText);
+            }
+        },
+        [assistantTextParts, isTTSPlaying, playTTS, stopTTS]
     );
 
     React.useEffect(() => {
@@ -845,6 +871,31 @@ const AssistantMessageBody: React.FC<Omit<MessageBodyProps, 'isUser'>> = ({
                   <TooltipContent sideOffset={6}>Start new multi-run from this answer</TooltipContent>
               </Tooltip>
 
+             {showMessageTTSButtons && hasCopyableText && (
+                 <Tooltip delayDuration={1000}>
+                     <TooltipTrigger asChild>
+                         <Button
+                             type="button"
+                             variant="ghost"
+                             size="icon"
+                             className={cn(
+                                 'h-8 w-8 bg-transparent hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent focus-visible:ring-2 focus-visible:ring-primary/50',
+                                 isTTSPlaying ? 'text-green-500' : 'text-muted-foreground hover:text-foreground'
+                             )}
+                             aria-label={isTTSPlaying ? 'Stop speaking' : 'Read aloud'}
+                             onPointerDown={(event) => event.stopPropagation()}
+                             onClick={handleTTSClick}
+                         >
+                             {isTTSPlaying ? (
+                                 <RiStopLine className="h-3.5 w-3.5" />
+                             ) : (
+                                 <RiVolumeUpLine className="h-3.5 w-3.5" />
+                             )}
+                         </Button>
+                     </TooltipTrigger>
+                     <TooltipContent sideOffset={6}>{isTTSPlaying ? 'Stop speaking' : 'Read aloud'}</TooltipContent>
+                 </Tooltip>
+             )}
              {onCopyMessage && (
                  <Tooltip delayDuration={1000}>
                      <TooltipTrigger asChild>
@@ -886,79 +937,81 @@ const AssistantMessageBody: React.FC<Omit<MessageBodyProps, 'isUser'>> = ({
          </>
      );
  
-     return (
+      return (
 
-        <div
-            className={cn(
-                'relative w-full group/message'
-            )}
-            style={{
-                contain: 'layout',
-                transform: 'translateZ(0)',
-            }}
-            onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
-        >
-            <div>
-                <div
-                    className="leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
-                >
-                    {renderedParts}
-                    {showErrorMessage && (
-                        <FadeInOnReveal key="assistant-error">
-                            <div className="group/assistant-text relative break-words">
-                                <SimpleMarkdownRenderer content={errorMessage ?? ''} />
-                            </div>
-                        </FadeInOnReveal>
-                    )}
-                    {showSummaryBody && (
-                        <FadeInOnReveal key="summary-body">
-                            <div
-                                className="group/assistant-text relative break-words"
-                                onMouseEnter={() => setIsSummaryHovered(true)}
-                                onMouseLeave={() => setIsSummaryHovered(false)}
-                            >
-                                <SimpleMarkdownRenderer content={summaryBody} />
-                                {shouldShowFooter && (
-                                    <div className="mt-2 mb-1 flex items-center justify-between gap-2">
-                                        {turnDurationText ? (
-                                            <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
-                                                <RiHourglassLine className="h-3.5 w-3.5" />
-                                                {turnDurationText}
-                                            </span>
-                                        ) : <span />}
-                                        <div
-                                            className={cn(
-                                                "flex items-center gap-2 opacity-0 pointer-events-none transition-opacity duration-150 focus-within:opacity-100 focus-within:pointer-events-auto",
-                                                isSummaryHovered && "opacity-100 pointer-events-auto",
-                                            )}
-                                        >
-                                            {footerButtons}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </FadeInOnReveal>
-                    )}
-                </div>
-                <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
-                {!showSummaryBody && shouldShowFooter && (
-                    <div className="mt-2 mb-1 flex items-center justify-between gap-2">
-                        {turnDurationText ? (
-                            <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
-                                <RiHourglassLine className="h-3.5 w-3.5" />
-                                {turnDurationText}
-                            </span>
-                        ) : <span />}
-                        <div className="flex items-center gap-2 opacity-0 pointer-events-none transition-opacity duration-150 group-hover/message:opacity-100 group-hover/message:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
-                            {footerButtons}
-                        </div>
-                    </div>
-                )}
+         <div
+             ref={messageContentRef}
+             className={cn(
+                 'relative w-full group/message'
+             )}
+             style={{
+                 contain: 'layout',
+                 transform: 'translateZ(0)',
+             }}
+             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
+         >
+             <TextSelectionMenu containerRef={messageContentRef} />
+             <div>
+                 <div
+                     className="message-content-text leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
+                 >
+                     {renderedParts}
+                     {showErrorMessage && (
+                         <FadeInOnReveal key="assistant-error">
+                             <div className="group/assistant-text relative break-words">
+                                 <SimpleMarkdownRenderer content={errorMessage ?? ''} />
+                             </div>
+                         </FadeInOnReveal>
+                     )}
+                     {showSummaryBody && (
+                         <FadeInOnReveal key="summary-body">
+                             <div
+                                 className="group/assistant-text relative break-words"
+                                 onMouseEnter={() => setIsSummaryHovered(true)}
+                                 onMouseLeave={() => setIsSummaryHovered(false)}
+                             >
+                                 <SimpleMarkdownRenderer content={summaryBody} />
+                                 {shouldShowFooter && (
+                                     <div className="mt-2 mb-1 flex items-center justify-between gap-2">
+                                         {turnDurationText ? (
+                                             <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
+                                                 <RiHourglassLine className="h-3.5 w-3.5" />
+                                                 {turnDurationText}
+                                             </span>
+                                         ) : <span />}
+                                         <div
+                                             className={cn(
+                                                 "flex items-center gap-2 opacity-0 pointer-events-none transition-opacity duration-150 focus-within:opacity-100 focus-within:pointer-events-auto",
+                                                 isSummaryHovered && "opacity-100 pointer-events-auto",
+                                             )}
+                                         >
+                                             {footerButtons}
+                                         </div>
+                                     </div>
+                                 )}
+                             </div>
+                         </FadeInOnReveal>
+                     )}
+                 </div>
+                 <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
+                 {!showSummaryBody && shouldShowFooter && (
+                     <div className="mt-2 mb-1 flex items-center justify-between gap-2">
+                         {turnDurationText ? (
+                             <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
+                                 <RiHourglassLine className="h-3.5 w-3.5" />
+                                 {turnDurationText}
+                             </span>
+                         ) : <span />}
+                         <div className="flex items-center gap-2 opacity-0 pointer-events-none transition-opacity duration-150 group-hover/message:opacity-100 group-hover/message:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
+                             {footerButtons}
+                         </div>
+                     </div>
+                 )}
 
-            </div>
-        </div>
-    );
-};
+             </div>
+         </div>
+     );
+ };
 
 const MessageBody: React.FC<MessageBodyProps> = ({ isUser, ...props }) => {
 
