@@ -51,7 +51,7 @@ const OPENCHAMBER_SECTION_GROUPS: SectionGroup[] = [
   {
     id: 'notifications',
     label: 'Notifications',
-    items: ['Native'],
+    items: ['Native', 'ntfy.sh'],
   },
 ];
 

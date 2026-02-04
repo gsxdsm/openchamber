@@ -72,6 +72,21 @@ interface UIStore {
 
   showTerminalQuickKeysOnDesktop: boolean;
 
+  // ntfy.sh notification settings
+  ntfyEnabled: boolean;
+  ntfyServerUrl: string;
+  ntfyTopic: string;
+  ntfyNotifyOnCompletion: boolean;
+  ntfyNotifyOnError: boolean;
+  ntfyNotifyOnQuestion: boolean;
+  ntfyNotifyOnSubagents: boolean;
+  ntfyPriorityCompletion: 1 | 2 | 3 | 4 | 5;
+  ntfyPriorityError: 1 | 2 | 3 | 4 | 5;
+  ntfyPriorityQuestion: 1 | 2 | 3 | 4 | 5;
+  ntfySummarizationEnabled: boolean;
+  ntfySummarizationThreshold: number;
+  ntfySummarizationMaxLength: number;
+
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -129,6 +144,21 @@ interface UIStore {
   setNotifyOnSubtasks: (value: boolean) => void;
   openMultiRunLauncher: () => void;
   openMultiRunLauncherWithPrompt: (prompt: string) => void;
+
+  // ntfy.sh notification setters
+  setNtfyEnabled: (value: boolean) => void;
+  setNtfyServerUrl: (value: string) => void;
+  setNtfyTopic: (value: string) => void;
+  setNtfyNotifyOnCompletion: (value: boolean) => void;
+  setNtfyNotifyOnError: (value: boolean) => void;
+  setNtfyNotifyOnQuestion: (value: boolean) => void;
+  setNtfyNotifyOnSubagents: (value: boolean) => void;
+  setNtfyPriorityCompletion: (value: 1 | 2 | 3 | 4 | 5) => void;
+  setNtfyPriorityError: (value: 1 | 2 | 3 | 4 | 5) => void;
+  setNtfyPriorityQuestion: (value: 1 | 2 | 3 | 4 | 5) => void;
+  setNtfySummarizationEnabled: (value: boolean) => void;
+  setNtfySummarizationThreshold: (value: number) => void;
+  setNtfySummarizationMaxLength: (value: number) => void;
 }
 
 export const useUIStore = create<UIStore>()(
@@ -186,6 +216,21 @@ export const useUIStore = create<UIStore>()(
         notifyOnSubtasks: true,
 
         showTerminalQuickKeysOnDesktop: false,
+
+        // ntfy.sh notification defaults
+        ntfyEnabled: false,
+        ntfyServerUrl: 'https://ntfy.sh',
+        ntfyTopic: '',
+        ntfyNotifyOnCompletion: true,
+        ntfyNotifyOnError: true,
+        ntfyNotifyOnQuestion: true,
+        ntfyNotifyOnSubagents: false,
+        ntfyPriorityCompletion: 3,
+        ntfyPriorityError: 4,
+        ntfyPriorityQuestion: 4,
+        ntfySummarizationEnabled: false,
+        ntfySummarizationThreshold: 500,
+        ntfySummarizationMaxLength: 300,
 
         setTheme: (theme) => {
           set({ theme });
@@ -657,6 +702,47 @@ export const useUIStore = create<UIStore>()(
         setNotifyOnSubtasks: (value) => {
           set({ notifyOnSubtasks: value });
         },
+
+        // ntfy.sh notification setters
+        setNtfyEnabled: (value) => {
+          set({ ntfyEnabled: value });
+        },
+        setNtfyServerUrl: (value) => {
+          set({ ntfyServerUrl: value });
+        },
+        setNtfyTopic: (value) => {
+          set({ ntfyTopic: value });
+        },
+        setNtfyNotifyOnCompletion: (value) => {
+          set({ ntfyNotifyOnCompletion: value });
+        },
+        setNtfyNotifyOnError: (value) => {
+          set({ ntfyNotifyOnError: value });
+        },
+        setNtfyNotifyOnQuestion: (value) => {
+          set({ ntfyNotifyOnQuestion: value });
+        },
+        setNtfyNotifyOnSubagents: (value) => {
+          set({ ntfyNotifyOnSubagents: value });
+        },
+        setNtfyPriorityCompletion: (value) => {
+          set({ ntfyPriorityCompletion: value });
+        },
+        setNtfyPriorityError: (value) => {
+          set({ ntfyPriorityError: value });
+        },
+        setNtfyPriorityQuestion: (value) => {
+          set({ ntfyPriorityQuestion: value });
+        },
+        setNtfySummarizationEnabled: (value) => {
+          set({ ntfySummarizationEnabled: value });
+        },
+        setNtfySummarizationThreshold: (value) => {
+          set({ ntfySummarizationThreshold: value });
+        },
+        setNtfySummarizationMaxLength: (value) => {
+          set({ ntfySummarizationMaxLength: value });
+        },
       }),
       {
         name: 'ui-store',
@@ -693,6 +779,19 @@ export const useUIStore = create<UIStore>()(
           notificationMode: state.notificationMode,
           showTerminalQuickKeysOnDesktop: state.showTerminalQuickKeysOnDesktop,
           notifyOnSubtasks: state.notifyOnSubtasks,
+          ntfyEnabled: state.ntfyEnabled,
+          ntfyServerUrl: state.ntfyServerUrl,
+          ntfyTopic: state.ntfyTopic,
+          ntfyNotifyOnCompletion: state.ntfyNotifyOnCompletion,
+          ntfyNotifyOnError: state.ntfyNotifyOnError,
+          ntfyNotifyOnQuestion: state.ntfyNotifyOnQuestion,
+          ntfyNotifyOnSubagents: state.ntfyNotifyOnSubagents,
+          ntfyPriorityCompletion: state.ntfyPriorityCompletion,
+          ntfyPriorityError: state.ntfyPriorityError,
+          ntfyPriorityQuestion: state.ntfyPriorityQuestion,
+          ntfySummarizationEnabled: state.ntfySummarizationEnabled,
+          ntfySummarizationThreshold: state.ntfySummarizationThreshold,
+          ntfySummarizationMaxLength: state.ntfySummarizationMaxLength,
         })
       }
     ),

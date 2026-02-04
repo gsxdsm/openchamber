@@ -2994,7 +2994,8 @@ async function main(options = {}) {
       req.path.startsWith('/api/prompts') ||
       req.path.startsWith('/api/terminal') ||
       req.path.startsWith('/api/opencode') ||
-      req.path.startsWith('/api/push')
+      req.path.startsWith('/api/push') ||
+      req.path.startsWith('/api/summarize')
     ) {
 
       express.json({ limit: '50mb' })(req, res, next);
@@ -5881,6 +5882,27 @@ async function main(options = {}) {
     } catch (error) {
       console.error('Failed to revert git file:', error);
       res.status(500).json({ error: error.message || 'Failed to revert git file' });
+    }
+  });
+
+  // Text summarization endpoint (used by ntfy notifications)
+  app.post('/api/summarize', async (req, res) => {
+    try {
+      const { text, threshold = 200, maxLength = 300 } = req.body || {};
+
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ error: 'Text is required' });
+      }
+
+      const { summarizeText } = await import('./lib/summarization-service.js');
+      const result = await summarizeText({ text, threshold, maxLength });
+
+      return res.json(result);
+    } catch (error) {
+      console.error('[Summarize] Error:', error);
+      const limit = req.body?.maxLength || 300;
+      const fallback = (req.body?.text || '').slice(0, limit);
+      return res.json({ summary: fallback, summarized: false, reason: error.message });
     }
   });
 

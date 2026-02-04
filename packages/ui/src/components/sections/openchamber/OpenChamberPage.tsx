@@ -132,7 +132,7 @@ const GitHubSectionContent: React.FC = () => {
     return <GitHubSettings />;
 };
 
-// Notifications section: Native browser notifications
+// Notifications section: Native browser and ntfy.sh notifications
 const NotificationSectionContent: React.FC = () => {
     return <NotificationSettings />;
 };

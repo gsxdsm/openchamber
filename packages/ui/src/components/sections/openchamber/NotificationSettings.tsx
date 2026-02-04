@@ -4,7 +4,9 @@ import { isWebRuntime } from '@/lib/desktop';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-
+import { testNtfyConfig, getPriorityLabel } from '@/lib/notifications/ntfy';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { GridLoader } from '@/components/ui/grid-loader';
 
 export const NotificationSettings: React.FC = () => {
@@ -20,6 +22,38 @@ export const NotificationSettings: React.FC = () => {
   const [pushSupported, setPushSupported] = React.useState(false);
   const [pushSubscribed, setPushSubscribed] = React.useState(false);
   const [pushBusy, setPushBusy] = React.useState(false);
+
+  // ntfy settings
+  const ntfyEnabled = useUIStore(state => state.ntfyEnabled);
+  const setNtfyEnabled = useUIStore(state => state.setNtfyEnabled);
+  const ntfyServerUrl = useUIStore(state => state.ntfyServerUrl);
+  const setNtfyServerUrl = useUIStore(state => state.setNtfyServerUrl);
+  const ntfyTopic = useUIStore(state => state.ntfyTopic);
+  const setNtfyTopic = useUIStore(state => state.setNtfyTopic);
+  const ntfyNotifyOnCompletion = useUIStore(state => state.ntfyNotifyOnCompletion);
+  const setNtfyNotifyOnCompletion = useUIStore(state => state.setNtfyNotifyOnCompletion);
+  const ntfyNotifyOnError = useUIStore(state => state.ntfyNotifyOnError);
+  const setNtfyNotifyOnError = useUIStore(state => state.setNtfyNotifyOnError);
+  const ntfyNotifyOnQuestion = useUIStore(state => state.ntfyNotifyOnQuestion);
+  const setNtfyNotifyOnQuestion = useUIStore(state => state.setNtfyNotifyOnQuestion);
+  const ntfyNotifyOnSubagents = useUIStore(state => state.ntfyNotifyOnSubagents);
+  const setNtfyNotifyOnSubagents = useUIStore(state => state.setNtfyNotifyOnSubagents);
+  const ntfyPriorityCompletion = useUIStore(state => state.ntfyPriorityCompletion);
+  const setNtfyPriorityCompletion = useUIStore(state => state.setNtfyPriorityCompletion);
+  const ntfyPriorityError = useUIStore(state => state.ntfyPriorityError);
+  const setNtfyPriorityError = useUIStore(state => state.setNtfyPriorityError);
+  const ntfyPriorityQuestion = useUIStore(state => state.ntfyPriorityQuestion);
+  const setNtfyPriorityQuestion = useUIStore(state => state.setNtfyPriorityQuestion);
+
+  // Summarization settings
+  const ntfySummarizationEnabled = useUIStore(state => state.ntfySummarizationEnabled);
+  const setNtfySummarizationEnabled = useUIStore(state => state.setNtfySummarizationEnabled);
+  const ntfySummarizationThreshold = useUIStore(state => state.ntfySummarizationThreshold);
+  const setNtfySummarizationThreshold = useUIStore(state => state.setNtfySummarizationThreshold);
+  const ntfySummarizationMaxLength = useUIStore(state => state.ntfySummarizationMaxLength);
+  const setNtfySummarizationMaxLength = useUIStore(state => state.setNtfySummarizationMaxLength);
+
+  const [isTesting, setIsTesting] = React.useState(false);
 
   React.useEffect(() => {
     if (!isWeb) {
@@ -363,6 +397,40 @@ export const NotificationSettings: React.FC = () => {
     }
   };
 
+  const handleTestNtfyNotification = async () => {
+    if (!ntfyTopic.trim()) {
+      toast.error('Please enter a topic name');
+      return;
+    }
+
+    setIsTesting(true);
+    try {
+      const success = await testNtfyConfig({
+        serverUrl: ntfyServerUrl,
+        topic: ntfyTopic,
+      });
+
+      if (success) {
+        toast.success('Test notification sent successfully');
+      } else {
+        toast.error('Failed to send test notification');
+      }
+    } catch (error) {
+      toast.error('Error sending test notification');
+      console.error('[ntfy] Test error:', error);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const priorityOptions = [
+    { value: 1, label: getPriorityLabel(1) },
+    { value: 2, label: getPriorityLabel(2) },
+    { value: 3, label: getPriorityLabel(3) },
+    { value: 4, label: getPriorityLabel(4) },
+    { value: 5, label: getPriorityLabel(5) },
+  ];
+
   return (
     <div className="space-y-6">
       {/* General Notification Settings */}
@@ -497,6 +565,293 @@ export const NotificationSettings: React.FC = () => {
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {/* ntfy.sh Notifications Section */}
+      <div className="space-y-1 pt-6 border-t border-border/40">
+        <h3 className="typography-ui-header font-semibold text-foreground">
+          ntfy.sh Notifications
+        </h3>
+        <p className="typography-ui text-muted-foreground">
+          Send push notifications to your devices via ntfy.sh when agents complete tasks, encounter errors, or need input.
+        </p>
+      </div>
+
+      {/* Enable Toggle */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <span className="typography-ui text-foreground">
+            Enable ntfy.sh notifications
+          </span>
+          <p className="typography-micro text-muted-foreground">
+            Send notifications to your ntfy.sh topic
+          </p>
+        </div>
+        <Switch
+          checked={ntfyEnabled}
+          onCheckedChange={setNtfyEnabled}
+          className="data-[state=checked]:bg-status-info"
+        />
+      </div>
+
+      {ntfyEnabled && (
+        <>
+          {/* Configuration Section */}
+          <div className="space-y-4 pt-4 border-t border-border/40">
+            <h4 className="typography-ui-label font-medium text-foreground">
+              Configuration
+            </h4>
+
+            {/* Server URL */}
+            <div className="space-y-2">
+              <label className="typography-ui text-foreground">
+                Server URL
+              </label>
+              <Input
+                type="text"
+                value={ntfyServerUrl}
+                onChange={(e) => setNtfyServerUrl(e.target.value)}
+                placeholder="https://ntfy.sh"
+                className="bg-surface-elevated"
+              />
+              <p className="typography-micro text-muted-foreground">
+                Use https://ntfy.sh for the public server, or your self-hosted instance URL
+              </p>
+            </div>
+
+            {/* Topic */}
+            <div className="space-y-2">
+              <label className="typography-ui text-foreground">
+                Topic
+              </label>
+              <Input
+                type="text"
+                value={ntfyTopic}
+                onChange={(e) => setNtfyTopic(e.target.value)}
+                placeholder="your-secret-topic-name"
+                className="bg-surface-elevated"
+              />
+              <p className="typography-micro text-status-warning">
+                Treat your topic name like a password - anyone who knows it can send you notifications
+              </p>
+            </div>
+
+            {/* Test Button */}
+            <Button
+              variant="secondary"
+              onClick={handleTestNtfyNotification}
+              disabled={isTesting || !ntfyTopic.trim()}
+              className="w-full"
+            >
+              {isTesting ? 'Sending...' : 'Send Test Notification'}
+            </Button>
+          </div>
+
+          {/* Notification Types */}
+          <div className="space-y-4 pt-4 border-t border-border/40">
+            <h4 className="typography-ui-label font-medium text-foreground">
+              Notification Types
+            </h4>
+
+            {/* Completion */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="typography-ui text-foreground">
+                    Agent completion
+                  </span>
+                  <p className="typography-micro text-muted-foreground">
+                    Notify when an agent finishes a task
+                  </p>
+                </div>
+                <Switch
+                  checked={ntfyNotifyOnCompletion}
+                  onCheckedChange={setNtfyNotifyOnCompletion}
+                  className="data-[state=checked]:bg-status-info"
+                />
+              </div>
+              {ntfyNotifyOnCompletion && (
+                <div className="pl-4">
+                  <select
+                    value={ntfyPriorityCompletion}
+                    onChange={(e) => setNtfyPriorityCompletion(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
+                    className="typography-ui text-foreground bg-surface-elevated border border-border rounded px-2 py-1"
+                  >
+                    {priorityOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        Priority: {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Error */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="typography-ui text-foreground">
+                    Errors
+                  </span>
+                  <p className="typography-micro text-muted-foreground">
+                    Notify when an agent encounters an error
+                  </p>
+                </div>
+                <Switch
+                  checked={ntfyNotifyOnError}
+                  onCheckedChange={setNtfyNotifyOnError}
+                  className="data-[state=checked]:bg-status-info"
+                />
+              </div>
+              {ntfyNotifyOnError && (
+                <div className="pl-4">
+                  <select
+                    value={ntfyPriorityError}
+                    onChange={(e) => setNtfyPriorityError(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
+                    className="typography-ui text-foreground bg-surface-elevated border border-border rounded px-2 py-1"
+                  >
+                    {priorityOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        Priority: {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Question */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="typography-ui text-foreground">
+                    Questions
+                  </span>
+                  <p className="typography-micro text-muted-foreground">
+                    Notify when an agent needs your input
+                  </p>
+                </div>
+                <Switch
+                  checked={ntfyNotifyOnQuestion}
+                  onCheckedChange={setNtfyNotifyOnQuestion}
+                  className="data-[state=checked]:bg-status-info"
+                />
+              </div>
+              {ntfyNotifyOnQuestion && (
+                <div className="pl-4">
+                  <select
+                    value={ntfyPriorityQuestion}
+                    onChange={(e) => setNtfyPriorityQuestion(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
+                    className="typography-ui text-foreground bg-surface-elevated border border-border rounded px-2 py-1"
+                  >
+                    {priorityOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        Priority: {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Subagents */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <span className="typography-ui text-foreground">
+                  Notify for subagents
+                </span>
+                <p className="typography-micro text-muted-foreground">
+                  Send notifications for child sessions created during multi-run
+                </p>
+              </div>
+              <Switch
+                checked={ntfyNotifyOnSubagents}
+                onCheckedChange={setNtfyNotifyOnSubagents}
+                className="data-[state=checked]:bg-status-info"
+              />
+            </div>
+          </div>
+
+          {/* Summarization Section */}
+          <div className="space-y-4 pt-4 border-t border-border/40">
+            <h4 className="typography-ui-label font-medium text-foreground">
+              Message Summarization
+            </h4>
+            <p className="typography-ui text-muted-foreground">
+              Use AI to summarize long messages before sending notifications
+            </p>
+
+            {/* Enable Summarization */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <span className="typography-ui text-foreground">
+                  Enable summarization
+                </span>
+                <p className="typography-micro text-muted-foreground">
+                  Summarize long messages using AI
+                </p>
+              </div>
+              <Switch
+                checked={ntfySummarizationEnabled}
+                onCheckedChange={setNtfySummarizationEnabled}
+                className="data-[state=checked]:bg-status-info"
+              />
+            </div>
+
+            {ntfySummarizationEnabled && (
+              <div className="space-y-4 pl-4">
+                {/* Threshold */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="typography-ui text-foreground">
+                      Summarization threshold
+                    </span>
+                    <span className="typography-micro text-muted-foreground">
+                      {ntfySummarizationThreshold} characters
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2000"
+                    step="100"
+                    value={ntfySummarizationThreshold}
+                    onChange={(e) => setNtfySummarizationThreshold(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <p className="typography-micro text-muted-foreground">
+                    Messages longer than this will be summarized
+                  </p>
+                </div>
+
+                {/* Max summary length */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="typography-ui text-foreground">
+                      Max summary length
+                    </span>
+                    <span className="typography-micro text-muted-foreground">
+                      {ntfySummarizationMaxLength} characters
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="1000"
+                    step="50"
+                    value={ntfySummarizationMaxLength}
+                    onChange={(e) => setNtfySummarizationMaxLength(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <p className="typography-micro text-muted-foreground">
+                    Maximum length of the summarized notification text
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

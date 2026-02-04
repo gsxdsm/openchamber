@@ -2,6 +2,7 @@ import React from 'react';
 import { opencodeClient, type RoutedOpencodeEvent } from '@/lib/opencode/client';
 import { saveSessionCursor } from '@/lib/messageCursorPersistence';
 import { useSessionStore } from '@/stores/useSessionStore';
+import { useMessageStore } from '@/stores/messageStore';
 import { getActiveSessionWindow } from '@/stores/types/sessionTypes';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore, type EventStreamStatus } from '@/stores/useUIStore';
@@ -16,6 +17,9 @@ import { useMcpStore } from '@/stores/useMcpStore';
 import { useContextStore } from '@/stores/contextStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isWebRuntime } from '@/lib/desktop';
+import { sendNtfyNotification } from '@/lib/notifications/ntfy';
+import { getNotificationBody } from '@/lib/notifications/summarize';
+import { isSessionVisible } from '@/lib/notifications/sessionVisibility';
 
 interface EventData {
   type: string;
@@ -83,6 +87,50 @@ const isIdNewer = (id: string, referenceId: string): boolean => {
   return currentSortable > referenceSortable;
 };
 
+/**
+ * Resolve the project display name for a session directory.
+ * Matches the sidebar label by looking up the project in the projects store,
+ * falling back through worktree metadata for sessions running in worktrees.
+ */
+const resolveNtfyProjectName = (sessionDirectory: string): string => {
+  const sessionDir = (sessionDirectory || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!sessionDir) return 'Project';
+
+  const projects = useProjectsStore.getState().projects;
+
+  // Direct match: session directory is the project path (or a child)
+  const directMatch = projects.find(p => {
+    const pp = (p.path || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    return sessionDir === pp || sessionDir.startsWith(pp + '/');
+  });
+
+  if (directMatch) {
+    const rawLabel = directMatch.label?.trim() || sessionDir.split('/').filter(Boolean).pop() || 'project';
+    return rawLabel.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  // Worktree match: session directory is a worktree path — find parent project
+  const worktreesByProject = useSessionStore.getState().availableWorktreesByProject;
+  for (const [projectPath, worktrees] of worktreesByProject) {
+    const isWorktree = worktrees.some(wt => {
+      const wp = (wt.path || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      return sessionDir === wp || sessionDir.startsWith(wp + '/');
+    });
+    if (isWorktree) {
+      const pp = projectPath.replace(/\\/g, '/').replace(/\/+$/, '');
+      const parentProject = projects.find(p => (p.path || '').replace(/\\/g, '/').replace(/\/+$/, '') === pp);
+      if (parentProject) {
+        const rawLabel = parentProject.label?.trim() || pp.split('/').filter(Boolean).pop() || 'project';
+        return rawLabel.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      }
+    }
+  }
+
+  // Fallback: last path segment
+  const fallback = sessionDir.split('/').filter(Boolean).pop() || 'project';
+  return fallback.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
 const messageCache = new Map<string, { sessionId: string; message: { info: Message; parts: Part[] } | null }>();
 const getMessageFromStore = (sessionId: string, messageId: string): { info: Message; parts: Part[] } | null => {
   const cacheKey = `${sessionId}:${messageId}`;
@@ -94,6 +142,20 @@ const getMessageFromStore = (sessionId: string, messageId: string): { info: Mess
   const storeState = useSessionStore.getState();
   const sessionMessages = storeState.messages.get(sessionId) || [];
   const message = sessionMessages.find(m => m.info.id === messageId) || null;
+  
+  // If message not found in messages store, check pendingAssistantParts in messageStore
+  if (!message) {
+    const messageStoreState = useMessageStore.getState();
+    const pendingParts = messageStoreState.pendingAssistantParts?.get(messageId);
+    if (pendingParts && pendingParts.sessionId === sessionId) {
+      const pendingMessage = {
+        info: { id: messageId, role: 'assistant', sessionID: sessionId } as Message,
+        parts: pendingParts.parts
+      };
+      messageCache.set(cacheKey, { sessionId, message: pendingMessage });
+      return pendingMessage;
+    }
+  }
   
   messageCache.set(cacheKey, { sessionId, message });
   return message;
@@ -388,6 +450,8 @@ export const useEventStream = () => {
   const questionToastShownRef = React.useRef<Set<string>>(new Set());
   const notifiedMessagesRef = React.useRef<Set<string>>(new Set());
   const notifiedQuestionsRef = React.useRef<Set<string>>(new Set());
+  const ntfyNotifiedMessagesRef = React.useRef<Set<string>>(new Set());
+  const ntfyNotifiedQuestionsRef = React.useRef<Set<string>>(new Set());
   const modeSwitchToastShownRef = React.useRef<Set<string>>(new Set());
   const lastUserAgentSelectionRef = React.useRef<Map<string, { created: number; messageId: string }>>(new Map());
 
@@ -1307,37 +1371,109 @@ export const useEventStream = () => {
 	          completeStreamingMessage(sessionId, messageId);
 
 	          // Only notify when entire message is finished (finish === 'stop')
-	          if (finish === 'stop' && isWebRuntime() && nativeNotificationsEnabled) {
-	            const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
+	          if (finish === 'stop') {
+	            const sessions = useSessionStore.getState().sessions;
+	            const session = sessions.find(s => s.id === sessionId);
 
-	            if (shouldNotify) {
-	              // Check if this is a subtask and if we should notify for subtasks
-	              if (!notifyOnSubtasks) {
-	                const sessions = useSessionStore.getState().sessions;
-	                const session = sessions.find(s => s.id === sessionId);
-	                const isSubtask = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
-	                if (isSubtask) {
+	            // Check if session is visible (not hidden)
+	            const sessionVisible = isSessionVisible(sessionId);
+
+	            // Check if this is a subtask
+	            const isSubtask = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
+
+	            // Native browser notifications
+	            if (isWebRuntime() && nativeNotificationsEnabled) {
+	              const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
+
+	              if (shouldNotify && sessionVisible) {
+	                // Check if this is a subtask and if we should notify for subtasks
+	                if (!notifyOnSubtasks && isSubtask) {
 	                  // Skip notification for subtasks
 	                  return;
 	                }
+
+	                const notifiedMessages = notifiedMessagesRef.current;
+
+	                if (!notifiedMessages.has(messageId)) {
+	                  notifiedMessages.add(messageId);
+
+	                  const runtimeAPIs = getRegisteredRuntimeAPIs();
+
+	                  if (runtimeAPIs?.notifications) {
+	                    const rawMode = (messageExt as { mode?: string }).mode || 'agent';
+	                    const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
+
+	                    const title = `${rawMode.charAt(0).toUpperCase() + rawMode.slice(1)} agent is ready`;
+	                    const body = `${formatModelID(rawModel)} completed the task`;
+
+	                    void runtimeAPIs.notifications.notifyAgentCompletion({ title, body, tag: messageId });
+	                  }
+	                }
+	              }
+	            }
+
+	            // ntfy.sh notifications
+	            const {
+	              ntfyEnabled,
+	              ntfyServerUrl,
+	              ntfyTopic,
+	              ntfyNotifyOnCompletion,
+	              ntfyNotifyOnSubagents,
+	              ntfyPriorityCompletion,
+	              ntfySummarizationEnabled,
+	              ntfySummarizationThreshold,
+	              ntfySummarizationMaxLength,
+	            } = useUIStore.getState();
+
+	            if (ntfyEnabled && ntfyTopic && ntfyNotifyOnCompletion && sessionVisible) {
+	              // Check if this is a subtask and if we should notify for subtasks
+	              if (!ntfyNotifyOnSubagents && isSubtask) {
+	                // Skip notification for subtasks
+	                return;
 	              }
 
-	              const notifiedMessages = notifiedMessagesRef.current;
+	              const ntfyNotifiedMessages = ntfyNotifiedMessagesRef.current;
 
-	              if (!notifiedMessages.has(messageId)) {
-	                notifiedMessages.add(messageId);
+	              if (!ntfyNotifiedMessages.has(messageId)) {
+	                ntfyNotifiedMessages.add(messageId);
 
-	                const runtimeAPIs = getRegisteredRuntimeAPIs();
-
-	                if (runtimeAPIs?.notifications) {
-	                  const rawMode = (messageExt as { mode?: string }).mode || 'agent';
-	                  const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
-
-	                  const title = `${rawMode.charAt(0).toUpperCase() + rawMode.slice(1)} agent is ready`;
-	                  const body = `${formatModelID(rawModel)} completed the task`;
-
-	                  void runtimeAPIs.notifications.notifyAgentCompletion({ title, body, tag: messageId });
+	                // The final finish=stop event may arrive WITHOUT parts — parts
+	                // were sent in earlier streaming events.  Use partsArray when it
+	                // has content, otherwise read directly from the message store
+	                // (bypassing the cached getMessageFromStore which may be stale).
+	                let parts = partsArray;
+	                if (parts.length === 0) {
+	                  const stored = useMessageStore.getState().messages.get(sessionId);
+	                  const msg = stored?.find(m => m.info.id === messageId);
+	                  if (msg?.parts && msg.parts.length > 0) {
+	                    parts = msg.parts;
+	                  }
 	                }
+
+	                // Get notification body (with or without summarization)
+	                void getNotificationBody(parts, {
+	                  summarizationEnabled: ntfySummarizationEnabled,
+	                  threshold: ntfySummarizationThreshold,
+	                  maxLength: ntfySummarizationMaxLength,
+	                }).then(body => {
+	                  const projectName = resolveNtfyProjectName((session as { directory?: string })?.directory || '');
+	                  const sessionTitle = (session?.title || 'Task').slice(0, 20);
+	                  const title = `${projectName}: ${sessionTitle}`;
+	                  // Fallback so ntfy never receives an empty body (shows "triggered")
+	                  const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
+	                  const message = body || `${formatModelID(rawModel)} completed the task`;
+
+	                  void sendNtfyNotification(
+	                    { serverUrl: ntfyServerUrl, topic: ntfyTopic },
+	                    {
+	                      topic: ntfyTopic,
+	                      title,
+	                      message,
+	                      priority: ntfyPriorityCompletion,
+	                      tags: ['white_check_mark'],
+	                    }
+	                  );
+	                });
 	              }
 	            }
 	          }
@@ -1513,10 +1649,18 @@ export const useEventStream = () => {
 
         const toastKey = `${request.sessionID}:${request.id}`;
 
-        if (isWebRuntime() && nativeNotificationsEnabled) {
+        // Check if session is visible
+        const sessionVisible = isSessionVisible(request.sessionID);
+
+        // Check if this is a subtask
+        const sessions = useSessionStore.getState().sessions;
+        const session = sessions.find(s => s.id === request.sessionID);
+        const isSubtask = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
+
+        if (isWebRuntime() && nativeNotificationsEnabled && sessionVisible) {
           const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
 
-          if (shouldNotify) {
+          if (shouldNotify && !isSubtask) {
             const notifiedQuestions = notifiedQuestionsRef.current;
 
             if (!notifiedQuestions.has(toastKey)) {
@@ -1544,6 +1688,50 @@ export const useEventStream = () => {
                 });
               }
             }
+          }
+        }
+
+        // ntfy.sh question notifications
+        const {
+          ntfyEnabled,
+          ntfyServerUrl,
+          ntfyTopic,
+          ntfyNotifyOnQuestion,
+          ntfyNotifyOnSubagents,
+          ntfyPriorityQuestion,
+        } = useUIStore.getState();
+
+        if (ntfyEnabled && ntfyTopic && ntfyNotifyOnQuestion && sessionVisible) {
+          // Check if this is a subtask and if we should notify for subtasks
+          if (!ntfyNotifyOnSubagents && isSubtask) {
+            // Skip notification for subtasks
+            return;
+          }
+
+          const ntfyNotifiedQuestions = ntfyNotifiedQuestionsRef.current;
+
+          if (!ntfyNotifiedQuestions.has(toastKey)) {
+            ntfyNotifiedQuestions.add(toastKey);
+
+            const first = Array.isArray(request.questions) ? request.questions[0] : undefined;
+            const questionText = typeof first?.question === 'string' ? first.question.trim() : '';
+
+            const qProjectName = resolveNtfyProjectName((session as { directory?: string })?.directory || '');
+            const qSessionTitle = (session?.title || 'Task').slice(0, 20);
+            const ntfyTitle = `${qProjectName}: ${qSessionTitle}`;
+
+            const body = questionText || 'Agent is waiting for your response';
+
+            void sendNtfyNotification(
+              { serverUrl: ntfyServerUrl, topic: ntfyTopic },
+              {
+                topic: ntfyTopic,
+                title: ntfyTitle,
+                message: body,
+                priority: ntfyPriorityQuestion,
+                tags: ['question'],
+              }
+            );
           }
         }
 
