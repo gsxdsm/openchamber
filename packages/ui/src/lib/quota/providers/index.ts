@@ -6,10 +6,14 @@ export interface QuotaProviderMeta {
 }
 
 export const QUOTA_PROVIDERS: QuotaProviderMeta[] = [
-  { id: 'openai', name: 'OpenAI' },
+  { id: 'claude', name: 'Claude' },
+  { id: 'codex', name: 'Codex' },
+  { id: 'github-copilot', name: 'GitHub Copilot' },
+  { id: 'github-copilot-addon', name: 'GitHub Copilot Add-on' },
   { id: 'google', name: 'Google' },
+  { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  { id: 'openrouter', name: 'OpenRouter' },
   { id: 'zai-coding-plan', name: 'z.ai' },
-  { id: 'github-copilot', name: 'GitHub Copilot' }
 ];
 
 export const QUOTA_PROVIDER_MAP = QUOTA_PROVIDERS.reduce<Record<string, QuotaProviderMeta>>(
