@@ -27,12 +27,16 @@ export async function summarizeText(
     const threshold = options?.threshold ?? store.summarizeCharacterThreshold;
     const maxLength = options?.maxLength ?? store.summarizeMaxLength;
     
+    console.log('[summarize] Called:', { textLength: text.length, threshold, maxLength });
+    
     // Don't summarize if text is under threshold
     if (text.length <= threshold) {
+        console.log('[summarize] Skipping — text length', text.length, '<= threshold', threshold);
         return text;
     }
     
     try {
+        console.log('[summarize] Calling /api/tts/summarize...');
         const response = await fetch('/api/tts/summarize', {
             method: 'POST',
             headers: {
@@ -54,6 +58,13 @@ export async function summarizeText(
             originalLength?: number;
             summaryLength?: number;
         };
+        
+        console.log('[summarize] Response:', { 
+            summarized: data.summarized, 
+            summaryLength: data.summary?.length,
+            reason: data.reason,
+            originalLength: data.originalLength,
+        });
         
         if (data.summarized && data.summary) {
             return data.summary;
@@ -86,4 +97,31 @@ export function shouldSummarize(
     }
     
     return text.length > store.summarizeCharacterThreshold;
+}
+
+/**
+ * Client-side text sanitization for TTS output.
+ * Removes markdown, URLs, file paths, and other non-speakable content.
+ * Applied as a fallback when server-side summarization is skipped.
+ */
+export function sanitizeForTTS(text: string): string {
+    if (!text) return '';
+    return text
+        // Remove code blocks
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`]*`/g, '')
+        // Remove markdown formatting
+        .replace(/[*_~#]/g, '')
+        // Remove URLs
+        .replace(/https?:\/\/[^\s]+/g, '')
+        // Remove file paths
+        .replace(/\/[\w\-./]+/g, '')
+        // Remove shell-like patterns
+        .replace(/^\s*[$#>]\s*/gm, '')
+        // Remove brackets and special chars
+        .replace(/[[\]{}()<>|&;]/g, ' ')
+        .replace(/\\/g, '')
+        // Collapse whitespace
+        .replace(/\s+/g, ' ')
+        .trim();
 }

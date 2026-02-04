@@ -91,11 +91,15 @@ export async function summarizeText({
   threshold = 200,
   maxLength = 500,
 }) {
+  console.log('[Summarize] Called with:', { textLength: text?.length, threshold, maxLength });
+
   // Don't summarize if text is under threshold
   if (!text || text.length <= threshold) {
+    console.log('[Summarize] Skipping — text length', text?.length, '<= threshold', threshold);
     return {
       summary: sanitizeForTTS(text || ''),
       summarized: false,
+      reason: text ? 'Text under threshold' : 'No text provided',
     };
   }
 
@@ -106,6 +110,8 @@ export async function summarizeText({
     // Scale token budget: ~4 chars per token, with some headroom
     const tokenBudget = Math.max(100, Math.ceil(maxLength / 3));
     const prompt = buildSummarizationPrompt(maxLength);
+
+    console.log('[Summarize] Calling zen API with tokenBudget:', tokenBudget);
 
     const response = await fetch('https://opencode.ai/zen/v1/responses', {
       method: 'POST',
@@ -135,6 +141,12 @@ export async function summarizeText({
     const data = await response.json();
     const summary = extractZenOutputText(data);
 
+    console.log('[Summarize] zen API response:', { 
+      hasSummary: !!summary, 
+      summaryLength: summary?.length,
+      originalLength: text.length 
+    });
+
     if (summary) {
       const sanitized = sanitizeForTTS(summary);
       return {
@@ -152,7 +164,7 @@ export async function summarizeText({
     };
   } catch (error) {
     if (error.name === 'AbortError') {
-      console.error('[Summarize] Request timed out');
+      console.error('[Summarize] Request timed out after', SUMMARIZE_TIMEOUT_MS, 'ms');
       return {
         summary: sanitizeForTTS(text),
         summarized: false,

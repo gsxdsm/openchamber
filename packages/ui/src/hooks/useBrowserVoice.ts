@@ -31,7 +31,7 @@ import { useSessionStore } from '@/stores/useSessionStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useServerTTS } from './useServerTTS';
 import { useSayTTS } from './useSayTTS';
-import { summarizeText, shouldSummarize } from '@/lib/voice/summarize';
+import { summarizeText, shouldSummarize, sanitizeForTTS } from '@/lib/voice/summarize';
 
 export type BrowserVoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
@@ -291,6 +291,9 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
                 textToSpeak = await summarizeText(textParts, {
                   threshold: summarizeCharacterThreshold,
                 });
+              } else {
+                // Still sanitize for TTS even when not summarizing
+                textToSpeak = sanitizeForTTS(textParts);
               }
               
               // Helper to restart listening after speech ends
