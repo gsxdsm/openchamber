@@ -5,7 +5,8 @@
  * Used by all TTS implementations (Browser, Say, OpenAI).
  */
 
-const SUMMARIZATION_PROMPT = `You are a text summarizer for text-to-speech output. Create a concise, natural-sounding summary that captures the key points. Keep it brief (2-4 sentences). 
+function buildSummarizationPrompt(maxLength) {
+  return `You are a text summarizer for text-to-speech output. Create a concise, natural-sounding summary that captures the key points. Keep the summary under ${maxLength} characters.
 
 CRITICAL INSTRUCTIONS:
 1. Output ONLY the final summary - no thinking, no reasoning, no explanations
@@ -13,8 +14,10 @@ CRITICAL INSTRUCTIONS:
 3. Do not use any special characters, markdown, code, URLs, file paths, or formatting
 4. Do not include phrases like "Here's a summary" or "In summary"
 5. Just provide clean, speakable text that can be read aloud
+6. Stay within the ${maxLength} character limit
 
 Your response should be ready to speak immediately.`;
+}
 
 const SUMMARIZE_TIMEOUT_MS = 30_000;
 
@@ -80,11 +83,13 @@ function extractZenOutputText(data) {
  * @param {Object} options
  * @param {string} options.text - The text to summarize
  * @param {number} options.threshold - Character threshold (don't summarize if under this length)
+ * @param {number} options.maxLength - Maximum character length for the summary output (50-2000)
  * @returns {Promise<{summary: string, summarized: boolean, reason?: string}>}
  */
 export async function summarizeText({
   text,
   threshold = 200,
+  maxLength = 500,
 }) {
   // Don't summarize if text is under threshold
   if (!text || text.length <= threshold) {
@@ -98,15 +103,19 @@ export async function summarizeText({
   const timer = setTimeout(() => controller.abort(), SUMMARIZE_TIMEOUT_MS);
 
   try {
+    // Scale token budget: ~4 chars per token, with some headroom
+    const tokenBudget = Math.max(100, Math.ceil(maxLength / 3));
+    const prompt = buildSummarizationPrompt(maxLength);
+
     const response = await fetch('https://opencode.ai/zen/v1/responses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-5-nano',
         input: [
-          { role: 'user', content: `${SUMMARIZATION_PROMPT}\n\nText to summarize:\n${text}` },
+          { role: 'user', content: `${prompt}\n\nText to summarize:\n${text}` },
         ],
-        max_output_tokens: 500,
+        max_output_tokens: tokenBudget,
         stream: false,
         reasoning: { effort: 'low' },
       }),

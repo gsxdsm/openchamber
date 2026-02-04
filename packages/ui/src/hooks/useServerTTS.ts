@@ -77,8 +77,8 @@ export function useServerTTS(): UseServerTTSReturn {
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   
-  // Get current model and threshold from config store for summarization
-  const { currentProviderId, currentModelId, summarizeCharacterThreshold, openaiApiKey } = useConfigStore();
+  // Get current model, threshold, and max length from config store for summarization
+  const { currentProviderId, currentModelId, summarizeCharacterThreshold, summarizeMaxLength, openaiApiKey } = useConfigStore();
 
   // Check if server TTS is available
   const checkAvailability = useCallback(async (): Promise<boolean> => {
@@ -205,6 +205,8 @@ export function useServerTTS(): UseServerTTSReturn {
           modelId: options?.modelId || currentModelId || undefined,
           // Use provided threshold, or fall back to user setting, or default to 200
           threshold: options?.threshold ?? summarizeCharacterThreshold ?? 200,
+          // Max character length for summaries
+          maxLength: summarizeMaxLength ?? 500,
           // Send API key from settings if available
           apiKey: openaiApiKey || undefined,
         }),
@@ -256,7 +258,7 @@ export function useServerTTS(): UseServerTTSReturn {
       options?.onError?.(errorMsg);
       setIsPlaying(false);
     }
-  }, [stop, currentProviderId, currentModelId, summarizeCharacterThreshold, openaiApiKey]);
+  }, [stop, currentProviderId, currentModelId, summarizeCharacterThreshold, summarizeMaxLength, openaiApiKey]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -19,10 +19,13 @@ export async function summarizeText(
     options?: {
         /** Character threshold - don't summarize if under this length */
         threshold?: number;
+        /** Max characters for the summary output */
+        maxLength?: number;
     }
 ): Promise<string> {
     const store = useConfigStore.getState();
     const threshold = options?.threshold ?? store.summarizeCharacterThreshold;
+    const maxLength = options?.maxLength ?? store.summarizeMaxLength;
     
     // Don't summarize if text is under threshold
     if (text.length <= threshold) {
@@ -35,7 +38,7 @@ export async function summarizeText(
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text, threshold }),
+            body: JSON.stringify({ text, threshold, maxLength }),
         });
         
         if (!response.ok) {

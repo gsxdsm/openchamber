@@ -396,6 +396,7 @@ interface ConfigStore {
     summarizeMessageTTS: boolean;
     summarizeVoiceConversation: boolean;
     summarizeCharacterThreshold: number;
+    summarizeMaxLength: number;
     setSpeechRate: (rate: number) => void;
     setSpeechPitch: (pitch: number) => void;
     setSpeechVolume: (volume: number) => void;
@@ -408,6 +409,7 @@ interface ConfigStore {
     setSummarizeMessageTTS: (enabled: boolean) => void;
     setSummarizeVoiceConversation: (enabled: boolean) => void;
     setSummarizeCharacterThreshold: (threshold: number) => void;
+    setSummarizeMaxLength: (maxLength: number) => void;
 
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
@@ -580,6 +582,16 @@ export const useConfigStore = create<ConfigStore>()(
                         }
                     }
                     return 200;
+                })(),
+                summarizeMaxLength: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('summarizeMaxLength');
+                        if (saved) {
+                            const parsed = parseInt(saved, 10);
+                            if (!isNaN(parsed) && parsed >= 50 && parsed <= 2000) return parsed;
+                        }
+                    }
+                    return 500;
                 })(),
                 activateDirectory: async (directory) => {
                     const directoryKey = toDirectoryKey(directory);
@@ -1540,6 +1552,14 @@ export const useConfigStore = create<ConfigStore>()(
                     set({ summarizeCharacterThreshold: clamped });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('summarizeCharacterThreshold', String(clamped));
+                    }
+                },
+
+                setSummarizeMaxLength: (maxLength: number) => {
+                    const clamped = Math.max(50, Math.min(2000, maxLength));
+                    set({ summarizeMaxLength: clamped });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('summarizeMaxLength', String(clamped));
                     }
                 },
 

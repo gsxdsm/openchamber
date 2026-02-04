@@ -3220,7 +3220,7 @@ async function main(options = {}) {
   // Server-side TTS endpoint - streams audio from OpenAI TTS API
   app.post('/api/tts/speak', async (req, res) => {
     try {
-      const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, summarize = false, providerId, modelId, threshold = 200, apiKey } = req.body || {};
+      const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, summarize = false, providerId, modelId, threshold = 200, maxLength = 500, apiKey } = req.body || {};
 
       console.log('[TTS] Request received:', { voice, model, speed, textLength: text?.length, hasApiKey: !!apiKey });
 
@@ -3247,7 +3247,7 @@ async function main(options = {}) {
       if (summarize && textToSpeak.length > threshold) {
         try {
           const { summarizeText } = await import('./lib/summarization-service.js');
-          const result = await summarizeText({ text: textToSpeak, threshold });
+          const result = await summarizeText({ text: textToSpeak, threshold, maxLength });
           
           if (result.summarized && result.summary) {
             textToSpeak = result.summary;
@@ -3308,13 +3308,13 @@ async function main(options = {}) {
 
   app.post('/api/tts/summarize', async (req, res) => {
     try {
-      const { text, threshold = 200 } = req.body || {};
+      const { text, threshold = 200, maxLength = 500 } = req.body || {};
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Text is required' });
       }
 
-      const result = await summarizeText({ text, threshold });
+      const result = await summarizeText({ text, threshold, maxLength });
 
       return res.json(result);
     } catch (error) {

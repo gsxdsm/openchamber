@@ -68,6 +68,8 @@ export const VoiceSettings: React.FC = () => {
         setSummarizeVoiceConversation,
         summarizeCharacterThreshold,
         setSummarizeCharacterThreshold,
+        summarizeMaxLength,
+        setSummarizeMaxLength,
     } = useConfigStore();
 
     // Check if macOS 'say' is available and get voices
@@ -727,6 +729,7 @@ export const VoiceSettings: React.FC = () => {
 
                     {/* Character Threshold - only show if either summarization is enabled */}
                     {(summarizeMessageTTS || summarizeVoiceConversation) && (
+                        <>
                         <div className="flex items-start justify-between gap-4">
                             <div className="space-y-1 flex-1">
                                 <span className="typography-ui-label text-foreground">
@@ -748,6 +751,29 @@ export const VoiceSettings: React.FC = () => {
                                 />
                             </div>
                         </div>
+
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-1 flex-1">
+                                <span className="typography-ui-label text-foreground">
+                                    Summary Length Limit
+                                </span>
+                                <p className="typography-meta text-muted-foreground">
+                                    Max characters for the summary ({summarizeMaxLength} chars)
+                                </p>
+                            </div>
+                            <div className="w-[180px]">
+                                <Slider
+                                    value={summarizeMaxLength}
+                                    onChange={setSummarizeMaxLength}
+                                    min={50}
+                                    max={2000}
+                                    step={50}
+                                    label="Summary length limit"
+                                    valueFormatter={(v: number) => `${v}`}
+                                />
+                            </div>
+                        </div>
+                        </>
                     )}
                 </div>
 
