@@ -110,7 +110,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const sendMessage = useSessionStore((s) => s.sendMessage);
   const messages = useSessionStore((s) => s.messages);
   const createSession = useSessionStore((s) => s.createSession);
-  const { currentProviderId, currentModelId, currentAgentName, voiceProvider, speechRate, speechPitch, speechVolume, sayVoice, browserVoice, openaiVoice, summarizeVoiceConversation, summarizeCharacterThreshold, summarizeModel } = useConfigStore();
+  const { currentProviderId, currentModelId, currentAgentName, voiceProvider, speechRate, speechPitch, speechVolume, sayVoice, browserVoice, openaiVoice, summarizeVoiceConversation, summarizeCharacterThreshold } = useConfigStore();
   
   // Server TTS for mobile (bypasses Safari audio restrictions)
   const { speak: speakServerTTS, stop: stopServerTTS, isAvailable: isServerTTSAvailable, unlockAudio: unlockServerTTSAudio } = useServerTTS();
@@ -289,7 +289,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
               if (summarizeVoiceConversation && shouldSummarize(textParts, 'voice')) {
                 console.log('[useBrowserVoice] Summarizing AI response before speaking...');
                 textToSpeak = await summarizeText(textParts, {
-                  model: summarizeModel || undefined,
                   threshold: summarizeCharacterThreshold,
                 });
               }
@@ -422,7 +421,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       setStatus('error');
       processingMessageRef.current = false;
     }
-  }, [currentSessionId, currentProviderId, currentModelId, currentAgentName, language, sendMessage, createSession, speechRate, speechPitch, speechVolume, isMobile, isServerTTSAvailable, speakServerTTS, isSayTTSAvailable, speakSayTTS, voiceProvider, sayVoice, browserVoice, openaiVoice, summarizeVoiceConversation, summarizeCharacterThreshold, summarizeModel, conversationMode]);
+  }, [currentSessionId, currentProviderId, currentModelId, currentAgentName, language, sendMessage, createSession, speechRate, speechPitch, speechVolume, isMobile, isServerTTSAvailable, speakServerTTS, isSayTTSAvailable, speakSayTTS, voiceProvider, sayVoice, browserVoice, openaiVoice, summarizeVoiceConversation, summarizeCharacterThreshold, conversationMode]);
 
   // Update the ref when handleSpeechResult changes
   useEffect(() => {

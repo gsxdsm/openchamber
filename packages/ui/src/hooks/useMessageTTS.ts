@@ -34,7 +34,6 @@ export function useMessageTTS(): UseMessageTTSReturn {
         openaiVoice,
         summarizeMessageTTS,
         summarizeCharacterThreshold,
-        summarizeModel,
     } = useConfigStore();
     
     const { speak: speakServerTTS, stop: stopServerTTS, isAvailable: isServerTTSAvailable } = useServerTTS();
@@ -61,7 +60,6 @@ export function useMessageTTS(): UseMessageTTSReturn {
             if (summarizeMessageTTS && shouldSummarize(text, 'message')) {
                 console.log('[useMessageTTS] Summarizing text before playback...');
                 textToSpeak = await summarizeText(text, {
-                    model: summarizeModel || undefined,
                     threshold: summarizeCharacterThreshold,
                 });
             }
@@ -112,7 +110,6 @@ export function useMessageTTS(): UseMessageTTSReturn {
         openaiVoice,
         summarizeMessageTTS,
         summarizeCharacterThreshold,
-        summarizeModel,
         isServerTTSAvailable,
         isSayTTSAvailable,
         speakServerTTS,

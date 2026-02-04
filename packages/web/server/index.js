@@ -3243,20 +3243,11 @@ async function main(options = {}) {
 
       let textToSpeak = text.trim();
 
-      // Optionally summarize long text before speaking using OpenCode
-      if (summarize && textToSpeak.length > threshold && openCodePort) {
+      // Optionally summarize long text before speaking using zen API
+      if (summarize && textToSpeak.length > threshold) {
         try {
-          // Use provided provider/model, or pass null to let summarization service handle it
-          // The summarization service will return unsummarized text if no model is specified
-          // Use the summarization service
           const { summarizeText } = await import('./lib/summarization-service.js');
-          const result = await summarizeText({
-            text: textToSpeak,
-            providerId,
-            modelId,
-            threshold,
-            openCodePort
-          });
+          const result = await summarizeText({ text: textToSpeak, threshold });
           
           if (result.summarized && result.summary) {
             textToSpeak = result.summary;
@@ -3317,32 +3308,13 @@ async function main(options = {}) {
 
   app.post('/api/tts/summarize', async (req, res) => {
     try {
-      const { text, providerId, modelId, threshold = 200 } = req.body || {};
+      const { text, threshold = 200 } = req.body || {};
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Text is required' });
       }
 
-      // Parse provider and model from selection
-      // Format can be "providerId:modelId" or separate providerId and modelId
-      let targetProviderId = providerId;
-      let targetModelId = modelId;
-
-      if (providerId && providerId.includes(':')) {
-        const parts = providerId.split(':');
-        targetProviderId = parts[0];
-        targetModelId = parts[1];
-      }
-
-      // Use the summarization service
-      // If no model is specified, the service will return the text unsummarized
-      const result = await summarizeText({
-        text,
-        providerId: targetProviderId,
-        modelId: targetModelId,
-        threshold,
-        openCodePort
-      });
+      const result = await summarizeText({ text, threshold });
 
       return res.json(result);
     } catch (error) {

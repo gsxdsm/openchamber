@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useBrowserVoice } from '@/hooks/useBrowserVoice';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
-import { ModelSelector } from '@/components/sections/agents/ModelSelector';
+
 import {
     Select,
     SelectContent,
@@ -13,7 +13,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { RiMicLine, RiAlertLine, RiVolumeUpLine, RiSpeedLine, RiMusicLine, RiSoundModuleLine, RiAppleLine, RiPlayLine, RiStopLine, RiChromeLine, RiFileTextLine, RiRobot2Line, RiKeyLine, RiCloseLine } from '@remixicon/react';
+import { RiMicLine, RiAlertLine, RiVolumeUpLine, RiSpeedLine, RiMusicLine, RiSoundModuleLine, RiAppleLine, RiPlayLine, RiStopLine, RiChromeLine, RiFileTextLine, RiKeyLine, RiCloseLine } from '@remixicon/react';
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
 
 // Common language options with display names
@@ -68,8 +68,6 @@ export const VoiceSettings: React.FC = () => {
         setSummarizeVoiceConversation,
         summarizeCharacterThreshold,
         setSummarizeCharacterThreshold,
-        summarizeModel,
-        setSummarizeModel,
     } = useConfigStore();
 
     // Check if macOS 'say' is available and get voices
@@ -745,57 +743,27 @@ export const VoiceSettings: React.FC = () => {
 
                     {/* Character Threshold - only show if either summarization is enabled */}
                     {(summarizeMessageTTS || summarizeVoiceConversation) && (
-                        <>
-                            <div className="flex items-start justify-between gap-4">
-                                <div className="space-y-1 flex-1">
-                                    <span className="typography-ui-label text-foreground">
-                                        Character Threshold
-                                    </span>
-                                    <p className="typography-meta text-muted-foreground">
-                                        Summarize text longer than this ({summarizeCharacterThreshold} chars)
-                                    </p>
-                                </div>
-                                <div className="w-[180px]">
-                                    <Slider
-                                        value={summarizeCharacterThreshold}
-                                        onChange={setSummarizeCharacterThreshold}
-                                        min={50}
-                                        max={2000}
-                                        step={50}
-                                        label="Character threshold"
-                                        valueFormatter={(v: number) => `${v}`}
-                                    />
-                                </div>
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-1 flex-1">
+                                <span className="typography-ui-label text-foreground">
+                                    Character Threshold
+                                </span>
+                                <p className="typography-meta text-muted-foreground">
+                                    Summarize text longer than this ({summarizeCharacterThreshold} chars)
+                                </p>
                             </div>
-
-                            {/* Model Selection - uses same component as chat */}
-                            <div className="flex items-start justify-between gap-4">
-                                <div className="space-y-1 flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <RiRobot2Line className="w-4 h-4 text-muted-foreground" />
-                                        <span className="typography-ui-label text-foreground">
-                                            Summarization Model
-                                        </span>
-                                    </div>
-                                    <p className="typography-meta text-muted-foreground">
-                                        Model used to summarize long text for TTS. Uses current chat model by default.
-                                    </p>
-                                </div>
-                                <ModelSelector
-                                    providerId={summarizeModel ? summarizeModel.split(':')[0] : ''}
-                                    modelId={summarizeModel ? summarizeModel.split(':')[1] : ''}
-                                    onChange={(providerId, modelId) => {
-                                        if (providerId && modelId) {
-                                            setSummarizeModel(`${providerId}:${modelId}`);
-                                        } else {
-                                            setSummarizeModel('');
-                                        }
-                                    }}
-                                    className="w-[200px]"
-                                    placeholder="Use current model from session"
+                            <div className="w-[180px]">
+                                <Slider
+                                    value={summarizeCharacterThreshold}
+                                    onChange={setSummarizeCharacterThreshold}
+                                    min={50}
+                                    max={2000}
+                                    step={50}
+                                    label="Character threshold"
+                                    valueFormatter={(v: number) => `${v}`}
                                 />
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
 

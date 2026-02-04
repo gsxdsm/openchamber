@@ -1,22 +1,22 @@
 /**
  * Text Summarization Service
  * 
- * Provides a unified interface for summarizing text using OpenCode.
+ * Uses the opencode.ai zen API with gpt-5-nano for fast, lightweight summarization.
  * Used by all TTS implementations (Browser, Say, OpenAI).
  */
-
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
 const SUMMARIZATION_PROMPT = `You are a text summarizer for text-to-speech output. Create a concise, natural-sounding summary that captures the key points. Keep it brief (2-4 sentences). 
 
 CRITICAL INSTRUCTIONS:
-1. Output ONLY the final summary - no thinking, no reasoning, no explanations, no <thinking> blocks
+1. Output ONLY the final summary - no thinking, no reasoning, no explanations
 2. Do not show your work or thought process
 3. Do not use any special characters, markdown, code, URLs, file paths, or formatting
 4. Do not include phrases like "Here's a summary" or "In summary"
 5. Just provide clean, speakable text that can be read aloud
 
 Your response should be ready to speak immediately.`;
+
+const SUMMARIZE_TIMEOUT_MS = 30_000;
 
 /**
  * Sanitize text for TTS output
@@ -51,195 +51,112 @@ export function sanitizeForTTS(text) {
 }
 
 /**
- * Create an OpenCode client for the given port
+ * Extract text from zen API response
  */
-function createClient(openCodePort) {
-  return createOpencodeClient({
-    baseUrl: `http://localhost:${openCodePort}`,
-  });
+function extractZenOutputText(data) {
+  if (!data || typeof data !== 'object') return null;
+  const output = data.output;
+  if (!Array.isArray(output)) return null;
+
+  const messageItem = output.find(
+    (item) => item && typeof item === 'object' && item.type === 'message'
+  );
+  if (!messageItem) return null;
+
+  const content = messageItem.content;
+  if (!Array.isArray(content)) return null;
+
+  const textItem = content.find(
+    (item) => item && typeof item === 'object' && item.type === 'output_text'
+  );
+
+  const text = typeof textItem?.text === 'string' ? textItem.text.trim() : '';
+  return text || null;
 }
 
 /**
- * Summarize text using OpenCode SDK
+ * Summarize text using the opencode.ai zen API with gpt-5-nano
  * 
  * @param {Object} options
  * @param {string} options.text - The text to summarize
- * @param {string} options.providerId - The provider ID (e.g., 'anthropic')
- * @param {string} options.modelId - The model ID (e.g., 'claude-sonnet-4-20250514')
  * @param {number} options.threshold - Character threshold (don't summarize if under this length)
- * @param {number} options.openCodePort - The OpenCode server port (required)
  * @returns {Promise<{summary: string, summarized: boolean, reason?: string}>}
  */
 export async function summarizeText({
   text,
-  providerId,
-  modelId,
   threshold = 200,
-  openCodePort
 }) {
   // Don't summarize if text is under threshold
   if (!text || text.length <= threshold) {
     return {
       summary: sanitizeForTTS(text || ''),
-      summarized: false
-    };
-  }
-
-  if (!openCodePort) {
-    return {
-      summary: sanitizeForTTS(text),
       summarized: false,
-      reason: 'OpenCode not available'
     };
   }
 
-  // Use provided model or fallback to null (caller should provide current session model)
-  const targetProviderId = providerId;
-  const targetModelId = modelId;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUMMARIZE_TIMEOUT_MS);
 
-  if (!targetProviderId || !targetModelId) {
-    return {
-      summary: sanitizeForTTS(text),
-      summarized: false,
-      reason: 'No model specified'
-    };
-  }
-
-  const tempDir = await import('os').then(os => 
-    import('fs').then(fs => 
-      import('path').then(path => 
-        fs.promises.mkdtemp(path.join(os.tmpdir(), 'openchamber-summarize-'))
-      )
-    )
-  );
-
-  let client;
   try {
-    client = createClient(openCodePort);
-
-    // Create a temporary session for summarization
-    const sessionResponse = await client.session.create({
-      title: '[hidden] TTS Summarization'
+    const response = await fetch('https://opencode.ai/zen/v1/responses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-5-nano',
+        input: [
+          { role: 'user', content: `${SUMMARIZATION_PROMPT}\n\nText to summarize:\n${text}` },
+        ],
+        max_output_tokens: 500,
+        stream: false,
+        reasoning: { effort: 'low' },
+      }),
+      signal: controller.signal,
     });
 
-    if (!sessionResponse.data || !sessionResponse.data.id) {
-      throw new Error('Failed to create session: no session data returned');
-    }
-
-    const sessionId = sessionResponse.data.id;
-
-    try {
-      // Send the summarization prompt using promptAsync (returns immediately)
-      await client.session.promptAsync({
-        sessionID: sessionId,
-        model: {
-          providerID: targetProviderId,
-          modelID: targetModelId
-        },
-        parts: [
-          {
-            type: 'text',
-            text: `${SUMMARIZATION_PROMPT}\n\nText to summarize:\n${text}`,
-            synthetic: true
-          }
-        ]
-      });
-
-      // Poll for the response (wait for assistant message)
-      let attempts = 0;
-      const maxAttempts = 60; // 30 seconds max (500ms intervals)
-      let summary = null;
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        try {
-          const messagesResponse = await client.session.messages({
-            sessionID: sessionId
-          });
-
-          if (!messagesResponse.data || !Array.isArray(messagesResponse.data)) {
-            attempts++;
-            continue;
-          }
-
-          const messages = messagesResponse.data;
-
-          // Look for the assistant response (should be the last message)
-          const assistantMessage = messages.reverse().find(m => m.info?.role === 'assistant');
-
-          if (assistantMessage) {
-            // Filter out thinking/reasoning parts - only use text parts that don't contain thinking
-            const nonThinkingParts = assistantMessage.parts?.filter(p => {
-              // Skip if it's explicitly marked as thinking or reasoning
-              if (p.thinking || p.reasoning) return false;
-              // Skip if it has reasoning_content field (some models use this)
-              if (p.reasoning_content) return false;
-              // Only include text parts
-              return p.type === 'text';
-            });
-            
-            if (nonThinkingParts && nonThinkingParts.length > 0) {
-              // Get the first non-thinking text part
-              const textPart = nonThinkingParts[0];
-              
-              // Look for text content (could be 'content' or 'text' field)
-              if (textPart.content) {
-                summary = textPart.content.trim();
-                break;
-              } else if (textPart.text) {
-                summary = textPart.text.trim();
-                break;
-              }
-            }
-          }
-        } catch (pollError) {
-          // Silently continue polling
-        }
-      
-        attempts++;
-      }
-
-      if (summary) {
-        // Sanitize the summary output as well
-        summary = sanitizeForTTS(summary);
-        return {
-          summary,
-          summarized: true,
-          originalLength: text.length,
-          summaryLength: summary.length
-        };
-      }
-
-      // Fallback to sanitized original
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      console.error('[Summarize] zen API error:', response.status, errorBody);
       return {
         summary: sanitizeForTTS(text),
         summarized: false,
-        reason: 'No response from model'
+        reason: `zen API returned ${response.status}`,
       };
-    } finally {
-      // Clean up the temporary session
-      try {
-        await client.session.delete({
-          sessionID: sessionId
-        });
-      } catch (cleanupError) {
-        // Ignore cleanup errors
-      }
     }
-  } catch (error) {
+
+    const data = await response.json();
+    const summary = extractZenOutputText(data);
+
+    if (summary) {
+      const sanitized = sanitizeForTTS(summary);
+      return {
+        summary: sanitized,
+        summarized: true,
+        originalLength: text.length,
+        summaryLength: sanitized.length,
+      };
+    }
+
     return {
       summary: sanitizeForTTS(text),
       summarized: false,
-      reason: error.message
+      reason: 'No response from model',
+    };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('[Summarize] Request timed out');
+      return {
+        summary: sanitizeForTTS(text),
+        summarized: false,
+        reason: 'Request timed out',
+      };
+    }
+    console.error('[Summarize] Error:', error);
+    return {
+      summary: sanitizeForTTS(text),
+      summarized: false,
+      reason: error.message,
     };
   } finally {
-    // Clean up the temporary directory
-    try {
-      const fs = await import('fs');
-      await fs.promises.rm(tempDir, { recursive: true, force: true });
-    } catch (cleanupError) {
-      // Ignore cleanup errors
-    }
+    clearTimeout(timer);
   }
 }

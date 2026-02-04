@@ -11,7 +11,6 @@ import { useProjectsStore } from "./useProjectsStore";
 import type { ProjectEntry } from "@/lib/api/types";
 import { checkIsGitRepository } from "@/lib/gitApi";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
-import { isHiddenSession } from "@/lib/hiddenSession";
 
 interface SessionState {
     sessions: Session[];
@@ -229,32 +228,10 @@ const dedupeSessionsById = (sessions: Session[]): Session[] => {
     return Array.from(map.values());
 };
 
-/**
- * Filter out hidden sessions from the list.
- * Hidden sessions are used for background tasks and shouldn't appear in the UI.
- * Also filters sessions whose title starts with "[hidden]".
- */
-const filterVisibleSessions = (sessions: Session[]): Session[] => {
-    return sessions.filter((session) => {
-        // Filter by hidden session ID tracking
-        if (isHiddenSession(session.id)) {
-            return false;
-        }
-        // Filter by title prefix
-        if (session.title?.startsWith('[hidden]')) {
-            return false;
-        }
-        return true;
-    });
-};
-
 const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> => {
     const map = new Map<string, Session[]>();
 
-    // Filter out hidden sessions before building the directory map
-    const visibleSessions = filterVisibleSessions(sessions);
-
-    visibleSessions.forEach((session) => {
+    sessions.forEach((session) => {
         const directory = normalizePath((session as { directory?: string | null }).directory ?? null);
         if (!directory) {
             return;

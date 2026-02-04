@@ -396,7 +396,6 @@ interface ConfigStore {
     summarizeMessageTTS: boolean;
     summarizeVoiceConversation: boolean;
     summarizeCharacterThreshold: number;
-    summarizeModel: string;
     setSpeechRate: (rate: number) => void;
     setSpeechPitch: (pitch: number) => void;
     setSpeechVolume: (volume: number) => void;
@@ -409,7 +408,6 @@ interface ConfigStore {
     setSummarizeMessageTTS: (enabled: boolean) => void;
     setSummarizeVoiceConversation: (enabled: boolean) => void;
     setSummarizeCharacterThreshold: (threshold: number) => void;
-    setSummarizeModel: (model: string) => void;
 
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
@@ -583,14 +581,6 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 200;
                 })(),
-                summarizeModel: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeModel');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-
                 activateDirectory: async (directory) => {
                     const directoryKey = toDirectoryKey(directory);
 
@@ -1550,13 +1540,6 @@ export const useConfigStore = create<ConfigStore>()(
                     set({ summarizeCharacterThreshold: clamped });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('summarizeCharacterThreshold', String(clamped));
-                    }
-                },
-
-                setSummarizeModel: (model: string) => {
-                    set({ summarizeModel: model });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeModel', model);
                     }
                 },
 

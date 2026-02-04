@@ -1,13 +1,14 @@
 /**
  * Text summarization utility for TTS
  * 
- * Uses the server-side summarization endpoint.
+ * Calls the server-side summarization endpoint which uses
+ * the opencode.ai zen API with gpt-5-nano.
  */
 
 import { useConfigStore } from '@/stores/useConfigStore';
 
 /**
- * Summarize text using the server-side summarization endpoint
+ * Summarize text using the server-side zen API endpoint
  * 
  * @param text - The text to summarize
  * @param options - Optional configuration
@@ -16,8 +17,6 @@ import { useConfigStore } from '@/stores/useConfigStore';
 export async function summarizeText(
     text: string,
     options?: {
-        /** Override the model to use (format: "providerId:modelId") */
-        model?: string;
         /** Character threshold - don't summarize if under this length */
         threshold?: number;
     }
@@ -30,39 +29,14 @@ export async function summarizeText(
         return text;
     }
     
-    // Get model configuration
-    let providerId: string | undefined;
-    let modelId: string | undefined;
-    
-    const modelSetting = options?.model ?? store.summarizeModel;
-    
-    if (modelSetting && modelSetting.includes(':')) {
-        // Use specified model from settings
-        const [pId, mId] = modelSetting.split(':');
-        providerId = pId;
-        modelId = mId;
-    } else {
-        // No specific model selected - use the current chat model
-        providerId = store.currentProviderId;
-        modelId = store.currentModelId;
-    }
-    
     try {
-        console.log(`[summarize] Calling API: ${text.length} chars, threshold: ${threshold}`);
         const response = await fetch('/api/tts/summarize', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                text,
-                providerId,
-                modelId,
-                threshold,
-            }),
+            body: JSON.stringify({ text, threshold }),
         });
-        
-        console.log(`[summarize] Response status: ${response.status}`);
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -70,16 +44,16 @@ export async function summarizeText(
             throw new Error(`Summarization failed: ${response.status}`);
         }
         
-        const data = await response.json();
-        console.log('[summarize] Response data:', { summarized: data.summarized, reason: data.reason, hasSummary: !!data.summary });
+        const data = await response.json() as {
+            summarized: boolean;
+            summary?: string;
+            reason?: string;
+            originalLength?: number;
+            summaryLength?: number;
+        };
         
         if (data.summarized && data.summary) {
-            console.log(`[summarize] Success: ${data.originalLength} chars -> ${data.summaryLength} chars`);
             return data.summary;
-        }
-        
-        if (data.reason) {
-            console.log(`[summarize] Not summarized: ${data.reason}`);
         }
         
         // Return original text if not summarized
