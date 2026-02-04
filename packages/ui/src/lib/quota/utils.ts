@@ -37,5 +37,6 @@ export const formatWindowLabel = (label: string): string => {
   if (label === 'premium') return 'Premium Interactions';
   if (label === 'chat') return 'Chat Requests';
   if (label === 'completions') return 'Completions';
+  if (label === 'premium_interactions') return 'Premium interactions';
   return label;
 };
