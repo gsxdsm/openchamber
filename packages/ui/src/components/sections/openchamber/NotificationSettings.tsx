@@ -45,13 +45,21 @@ export const NotificationSettings: React.FC = () => {
   const ntfyPriorityQuestion = useUIStore(state => state.ntfyPriorityQuestion);
   const setNtfyPriorityQuestion = useUIStore(state => state.setNtfyPriorityQuestion);
 
-  // Summarization settings
+  // ntfy summarization settings
   const ntfySummarizationEnabled = useUIStore(state => state.ntfySummarizationEnabled);
   const setNtfySummarizationEnabled = useUIStore(state => state.setNtfySummarizationEnabled);
   const ntfySummarizationThreshold = useUIStore(state => state.ntfySummarizationThreshold);
   const setNtfySummarizationThreshold = useUIStore(state => state.setNtfySummarizationThreshold);
   const ntfySummarizationMaxLength = useUIStore(state => state.ntfySummarizationMaxLength);
   const setNtfySummarizationMaxLength = useUIStore(state => state.setNtfySummarizationMaxLength);
+
+  // Push notification summarization settings
+  const pushSummarizationEnabled = useUIStore(state => state.pushSummarizationEnabled);
+  const setPushSummarizationEnabled = useUIStore(state => state.setPushSummarizationEnabled);
+  const pushSummarizationThreshold = useUIStore(state => state.pushSummarizationThreshold);
+  const setPushSummarizationThreshold = useUIStore(state => state.setPushSummarizationThreshold);
+  const pushSummarizationMaxLength = useUIStore(state => state.pushSummarizationMaxLength);
+  const setPushSummarizationMaxLength = useUIStore(state => state.setPushSummarizationMaxLength);
 
   const [isTesting, setIsTesting] = React.useState(false);
 
@@ -510,6 +518,84 @@ export const NotificationSettings: React.FC = () => {
             <p className="typography-micro text-muted-foreground">
               Permission granted, but foreground notifications are disabled.
             </p>
+          )}
+
+          {/* Push Notification Summarization */}
+          {nativeNotificationsEnabled && canShowNotifications && (
+            <div className="space-y-4 pt-4 border-t border-border/40">
+              <h4 className="typography-ui-label font-medium text-foreground">
+                Message Summarization
+              </h4>
+              <p className="typography-ui text-muted-foreground">
+                Use AI to summarize long messages in push notification body
+              </p>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="typography-ui text-foreground">
+                    Enable summarization
+                  </span>
+                  <p className="typography-micro text-muted-foreground">
+                    Summarize long messages using AI
+                  </p>
+                </div>
+                <Switch
+                  checked={pushSummarizationEnabled}
+                  onCheckedChange={setPushSummarizationEnabled}
+                  className="data-[state=checked]:bg-status-info"
+                />
+              </div>
+
+              {pushSummarizationEnabled && (
+                <div className="space-y-4 pl-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="typography-ui text-foreground">
+                        Summarization threshold
+                      </span>
+                      <span className="typography-micro text-muted-foreground">
+                        {pushSummarizationThreshold} characters
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2000"
+                      step="100"
+                      value={pushSummarizationThreshold}
+                      onChange={(e) => setPushSummarizationThreshold(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <p className="typography-micro text-muted-foreground">
+                      Messages longer than this will be summarized
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="typography-ui text-foreground">
+                        Max summary length
+                      </span>
+                      <span className="typography-micro text-muted-foreground">
+                        {pushSummarizationMaxLength} characters
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="1000"
+                      step="50"
+                      value={pushSummarizationMaxLength}
+                      onChange={(e) => setPushSummarizationMaxLength(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <p className="typography-micro text-muted-foreground">
+                      Maximum length of the summarized notification text
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Background Notifications */}

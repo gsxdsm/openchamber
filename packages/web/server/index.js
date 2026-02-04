@@ -5900,8 +5900,8 @@ async function main(options = {}) {
       return res.json(result);
     } catch (error) {
       console.error('[Summarize] Error:', error);
-      const limit = req.body?.maxLength || 300;
-      const fallback = (req.body?.text || '').slice(0, limit);
+      const { sanitizeForTTS } = await import('./lib/summarization-service.js');
+      const fallback = sanitizeForTTS(req.body?.text || '');
       return res.json({ summary: fallback, summarized: false, reason: error.message });
     }
   });

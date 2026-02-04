@@ -18,7 +18,7 @@ import { useContextStore } from '@/stores/contextStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isWebRuntime } from '@/lib/desktop';
 import { sendNtfyNotification } from '@/lib/notifications/ntfy';
-import { getNotificationBody } from '@/lib/notifications/summarize';
+import { getNotificationBody, extractTextContent } from '@/lib/notifications/summarize';
 import { isSessionVisible } from '@/lib/notifications/sessionVisibility';
 
 interface EventData {
@@ -92,7 +92,7 @@ const isIdNewer = (id: string, referenceId: string): boolean => {
  * Matches the sidebar label by looking up the project in the projects store,
  * falling back through worktree metadata for sessions running in worktrees.
  */
-const resolveNtfyProjectName = (sessionDirectory: string): string => {
+const resolveProjectName = (sessionDirectory: string): string => {
   const sessionDir = (sessionDirectory || '').replace(/\\/g, '/').replace(/\/+$/, '');
   if (!sessionDir) return 'Project';
 
@@ -1254,10 +1254,11 @@ export const useEventStream = () => {
         const hasCompletedTimestamp = typeof completedCandidate === 'number' && Number.isFinite(completedCandidate);
 
         const stopMarkerPresent = finish === 'stop' || existingStopMarker;
+        const errorMarkerPresent = finish === 'error';
 
         const shouldFinalizeAssistantMessage =
           (message as { role?: string }).role === 'assistant' &&
-          (hasCompletedTimestamp || stopMarkerPresent);
+          (hasCompletedTimestamp || stopMarkerPresent || errorMarkerPresent);
 
           if (shouldFinalizeAssistantMessage && (message as { role?: string }).role === 'assistant') {
 
@@ -1374,19 +1375,33 @@ export const useEventStream = () => {
 	          if (finish === 'stop') {
 	            const sessions = useSessionStore.getState().sessions;
 	            const session = sessions.find(s => s.id === sessionId);
-
-	            // Check if session is visible (not hidden)
 	            const sessionVisible = isSessionVisible(sessionId);
-
-	            // Check if this is a subtask
 	            const isSubtask = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
+
+	            // Shared notification title & parts (used by both push and ntfy)
+	            const projectName = resolveProjectName((session as { directory?: string })?.directory || '');
+	            const sessionTitle = (session?.title || 'Task').slice(0, 20);
+	            const notificationTitle = `${projectName}: ${sessionTitle}`;
+	            const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
+	            const fallbackBody = `${formatModelID(rawModel)} completed the task`;
+
+	            // The final finish=stop event may arrive WITHOUT parts — parts
+	            // were sent in earlier streaming events.  Use partsArray when it
+	            // has content, otherwise read directly from the message store.
+	            let resolvedParts = partsArray;
+	            if (resolvedParts.length === 0) {
+	              const stored = useMessageStore.getState().messages.get(sessionId);
+	              const msg = stored?.find(m => m.info.id === messageId);
+	              if (msg?.parts && msg.parts.length > 0) {
+	                resolvedParts = msg.parts;
+	              }
+	            }
 
 	            // Native browser notifications
 	            if (isWebRuntime() && nativeNotificationsEnabled) {
 	              const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
 
 	              if (shouldNotify && sessionVisible) {
-	                // Check if this is a subtask and if we should notify for subtasks
 	                if (!notifyOnSubtasks && isSubtask) {
 	                  // Skip notification for subtasks
 	                  return;
@@ -1400,13 +1415,27 @@ export const useEventStream = () => {
 	                  const runtimeAPIs = getRegisteredRuntimeAPIs();
 
 	                  if (runtimeAPIs?.notifications) {
-	                    const rawMode = (messageExt as { mode?: string }).mode || 'agent';
-	                    const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
+	                    const {
+	                      pushSummarizationEnabled,
+	                      pushSummarizationThreshold,
+	                      pushSummarizationMaxLength,
+	                    } = useUIStore.getState();
 
-	                    const title = `${rawMode.charAt(0).toUpperCase() + rawMode.slice(1)} agent is ready`;
-	                    const body = `${formatModelID(rawModel)} completed the task`;
-
-	                    void runtimeAPIs.notifications.notifyAgentCompletion({ title, body, tag: messageId });
+	                    if (pushSummarizationEnabled) {
+	                      void getNotificationBody(resolvedParts, {
+	                        summarizationEnabled: true,
+	                        threshold: pushSummarizationThreshold,
+	                        maxLength: pushSummarizationMaxLength,
+	                      }).then(body => {
+	                        void runtimeAPIs.notifications.notifyAgentCompletion({
+	                          title: notificationTitle,
+	                          body: body || fallbackBody,
+	                          tag: messageId,
+	                        });
+	                      });
+	                    } else {
+	                      void runtimeAPIs.notifications.notifyAgentCompletion({ title: notificationTitle, body: fallbackBody, tag: messageId });
+	                    }
 	                  }
 	                }
 	              }
@@ -1426,9 +1455,7 @@ export const useEventStream = () => {
 	            } = useUIStore.getState();
 
 	            if (ntfyEnabled && ntfyTopic && ntfyNotifyOnCompletion && sessionVisible) {
-	              // Check if this is a subtask and if we should notify for subtasks
 	              if (!ntfyNotifyOnSubagents && isSubtask) {
-	                // Skip notification for subtasks
 	                return;
 	              }
 
@@ -1437,43 +1464,106 @@ export const useEventStream = () => {
 	              if (!ntfyNotifiedMessages.has(messageId)) {
 	                ntfyNotifiedMessages.add(messageId);
 
-	                // The final finish=stop event may arrive WITHOUT parts — parts
-	                // were sent in earlier streaming events.  Use partsArray when it
-	                // has content, otherwise read directly from the message store
-	                // (bypassing the cached getMessageFromStore which may be stale).
-	                let parts = partsArray;
-	                if (parts.length === 0) {
-	                  const stored = useMessageStore.getState().messages.get(sessionId);
-	                  const msg = stored?.find(m => m.info.id === messageId);
-	                  if (msg?.parts && msg.parts.length > 0) {
-	                    parts = msg.parts;
-	                  }
-	                }
-
-	                // Get notification body (with or without summarization)
-	                void getNotificationBody(parts, {
+	                void getNotificationBody(resolvedParts, {
 	                  summarizationEnabled: ntfySummarizationEnabled,
 	                  threshold: ntfySummarizationThreshold,
 	                  maxLength: ntfySummarizationMaxLength,
 	                }).then(body => {
-	                  const projectName = resolveNtfyProjectName((session as { directory?: string })?.directory || '');
-	                  const sessionTitle = (session?.title || 'Task').slice(0, 20);
-	                  const title = `${projectName}: ${sessionTitle}`;
-	                  // Fallback so ntfy never receives an empty body (shows "triggered")
-	                  const rawModel = (messageExt as { modelID?: string }).modelID || 'assistant';
-	                  const message = body || `${formatModelID(rawModel)} completed the task`;
+	                  const message = body || fallbackBody;
 
 	                  void sendNtfyNotification(
 	                    { serverUrl: ntfyServerUrl, topic: ntfyTopic },
 	                    {
 	                      topic: ntfyTopic,
-	                      title,
+	                      title: notificationTitle,
 	                      message,
 	                      priority: ntfyPriorityCompletion,
 	                      tags: ['white_check_mark'],
 	                    }
 	                  );
 	                });
+	              }
+	            }
+	          }
+
+	          // Notify on error finish
+	          if (finish === 'error') {
+	            const sessions = useSessionStore.getState().sessions;
+	            const session = sessions.find(s => s.id === sessionId);
+	            const sessionVisible = isSessionVisible(sessionId);
+	            const isSubtaskErr = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
+
+	            // Shared title & body
+	            const projectName = resolveProjectName((session as { directory?: string })?.directory || '');
+	            const sessionTitle = (session?.title || 'Task').slice(0, 20);
+	            const notificationTitle = `${projectName}: ${sessionTitle}`;
+
+	            let errorParts = partsArray;
+	            if (errorParts.length === 0) {
+	              const stored = useMessageStore.getState().messages.get(sessionId);
+	              const msg = stored?.find(m => m.info.id === messageId);
+	              if (msg?.parts && msg.parts.length > 0) {
+	                errorParts = msg.parts;
+	              }
+	            }
+	            const errorText = extractTextContent(errorParts);
+	            const errorBody = errorText
+	              ? errorText.slice(0, 300) + (errorText.length > 300 ? '...' : '')
+	              : 'The agent encountered an error';
+
+	            // Native browser notifications for errors
+	            if (isWebRuntime() && nativeNotificationsEnabled) {
+	              const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
+
+	              if (shouldNotify && sessionVisible) {
+	                if (!notifyOnSubtasks && isSubtaskErr) {
+	                  // Skip notification for subtask errors
+	                } else {
+	                  const notifiedMessages = notifiedMessagesRef.current;
+	                  if (!notifiedMessages.has(messageId)) {
+	                    notifiedMessages.add(messageId);
+	                    const runtimeAPIs = getRegisteredRuntimeAPIs();
+	                    if (runtimeAPIs?.notifications) {
+	                      void runtimeAPIs.notifications.notifyAgentCompletion({
+	                        title: notificationTitle,
+	                        body: errorBody,
+	                        tag: messageId,
+	                      });
+	                    }
+	                  }
+	                }
+	              }
+	            }
+
+	            // ntfy.sh notifications for errors
+	            const {
+	              ntfyEnabled: ntfyEnabledErr,
+	              ntfyServerUrl: ntfyServerUrlErr,
+	              ntfyTopic: ntfyTopicErr,
+	              ntfyNotifyOnError,
+	              ntfyNotifyOnSubagents: ntfyNotifyOnSubagentsErr,
+	              ntfyPriorityError,
+	            } = useUIStore.getState();
+
+	            if (ntfyEnabledErr && ntfyTopicErr && ntfyNotifyOnError && sessionVisible) {
+	              if (!ntfyNotifyOnSubagentsErr && isSubtaskErr) {
+	                // Skip notification for subtask errors
+	              } else {
+	                const ntfyNotifiedMessages = ntfyNotifiedMessagesRef.current;
+	                if (!ntfyNotifiedMessages.has(messageId)) {
+	                  ntfyNotifiedMessages.add(messageId);
+
+	                  void sendNtfyNotification(
+	                    { serverUrl: ntfyServerUrlErr, topic: ntfyTopicErr },
+	                    {
+	                      topic: ntfyTopicErr,
+	                      title: notificationTitle,
+	                      message: errorBody,
+	                      priority: ntfyPriorityError,
+	                      tags: ['x'],
+	                    }
+	                  );
+	                }
 	              }
 	            }
 	          }
@@ -1649,14 +1739,21 @@ export const useEventStream = () => {
 
         const toastKey = `${request.sessionID}:${request.id}`;
 
-        // Check if session is visible
+        // Shared context for both push and ntfy question notifications
         const sessionVisible = isSessionVisible(request.sessionID);
-
-        // Check if this is a subtask
         const sessions = useSessionStore.getState().sessions;
         const session = sessions.find(s => s.id === request.sessionID);
         const isSubtask = session && 'parentID' in session && Boolean((session as { parentID?: string }).parentID);
 
+        const projectName = resolveProjectName((session as { directory?: string })?.directory || '');
+        const sessionTitle = (session?.title || 'Task').slice(0, 20);
+        const notificationTitle = `${projectName}: ${sessionTitle}`;
+
+        const first = Array.isArray(request.questions) ? request.questions[0] : undefined;
+        const questionText = typeof first?.question === 'string' ? first.question.trim() : '';
+        const questionBody = questionText || 'Agent is waiting for your response';
+
+        // Native browser notifications
         if (isWebRuntime() && nativeNotificationsEnabled && sessionVisible) {
           const shouldNotify = notificationMode === 'always' || visibilityStateRef.current === 'hidden';
 
@@ -1669,21 +1766,9 @@ export const useEventStream = () => {
               const runtimeAPIs = getRegisteredRuntimeAPIs();
 
               if (runtimeAPIs?.notifications) {
-                const first = Array.isArray(request.questions) ? request.questions[0] : undefined;
-                const header = typeof first?.header === 'string' ? first.header.trim() : '';
-                const questionText = typeof first?.question === 'string' ? first.question.trim() : '';
-
-                const title = /plan\s*mode/i.test(header)
-                  ? 'Switch to plan mode'
-                  : /build\s*agent/i.test(header)
-                    ? 'Switch to build mode'
-                    : header || 'Input needed';
-
-                const body = questionText || 'Agent is waiting for your response';
-
                 void runtimeAPIs.notifications.notifyAgentCompletion({
-                  title,
-                  body,
+                  title: notificationTitle,
+                  body: questionBody,
                   tag: toastKey,
                 });
               }
@@ -1702,9 +1787,7 @@ export const useEventStream = () => {
         } = useUIStore.getState();
 
         if (ntfyEnabled && ntfyTopic && ntfyNotifyOnQuestion && sessionVisible) {
-          // Check if this is a subtask and if we should notify for subtasks
           if (!ntfyNotifyOnSubagents && isSubtask) {
-            // Skip notification for subtasks
             return;
           }
 
@@ -1713,21 +1796,12 @@ export const useEventStream = () => {
           if (!ntfyNotifiedQuestions.has(toastKey)) {
             ntfyNotifiedQuestions.add(toastKey);
 
-            const first = Array.isArray(request.questions) ? request.questions[0] : undefined;
-            const questionText = typeof first?.question === 'string' ? first.question.trim() : '';
-
-            const qProjectName = resolveNtfyProjectName((session as { directory?: string })?.directory || '');
-            const qSessionTitle = (session?.title || 'Task').slice(0, 20);
-            const ntfyTitle = `${qProjectName}: ${qSessionTitle}`;
-
-            const body = questionText || 'Agent is waiting for your response';
-
             void sendNtfyNotification(
               { serverUrl: ntfyServerUrl, topic: ntfyTopic },
               {
                 topic: ntfyTopic,
-                title: ntfyTitle,
-                message: body,
+                title: notificationTitle,
+                message: questionBody,
                 priority: ntfyPriorityQuestion,
                 tags: ['question'],
               }

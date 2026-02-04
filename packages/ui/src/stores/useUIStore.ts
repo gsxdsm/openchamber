@@ -86,6 +86,9 @@ interface UIStore {
   ntfySummarizationEnabled: boolean;
   ntfySummarizationThreshold: number;
   ntfySummarizationMaxLength: number;
+  pushSummarizationEnabled: boolean;
+  pushSummarizationThreshold: number;
+  pushSummarizationMaxLength: number;
 
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   toggleSidebar: () => void;
@@ -159,6 +162,9 @@ interface UIStore {
   setNtfySummarizationEnabled: (value: boolean) => void;
   setNtfySummarizationThreshold: (value: number) => void;
   setNtfySummarizationMaxLength: (value: number) => void;
+  setPushSummarizationEnabled: (value: boolean) => void;
+  setPushSummarizationThreshold: (value: number) => void;
+  setPushSummarizationMaxLength: (value: number) => void;
 }
 
 export const useUIStore = create<UIStore>()(
@@ -231,6 +237,9 @@ export const useUIStore = create<UIStore>()(
         ntfySummarizationEnabled: false,
         ntfySummarizationThreshold: 500,
         ntfySummarizationMaxLength: 300,
+        pushSummarizationEnabled: false,
+        pushSummarizationThreshold: 500,
+        pushSummarizationMaxLength: 300,
 
         setTheme: (theme) => {
           set({ theme });
@@ -743,6 +752,15 @@ export const useUIStore = create<UIStore>()(
         setNtfySummarizationMaxLength: (value) => {
           set({ ntfySummarizationMaxLength: value });
         },
+        setPushSummarizationEnabled: (value) => {
+          set({ pushSummarizationEnabled: value });
+        },
+        setPushSummarizationThreshold: (value) => {
+          set({ pushSummarizationThreshold: value });
+        },
+        setPushSummarizationMaxLength: (value) => {
+          set({ pushSummarizationMaxLength: value });
+        },
       }),
       {
         name: 'ui-store',
@@ -792,6 +810,9 @@ export const useUIStore = create<UIStore>()(
           ntfySummarizationEnabled: state.ntfySummarizationEnabled,
           ntfySummarizationThreshold: state.ntfySummarizationThreshold,
           ntfySummarizationMaxLength: state.ntfySummarizationMaxLength,
+          pushSummarizationEnabled: state.pushSummarizationEnabled,
+          pushSummarizationThreshold: state.pushSummarizationThreshold,
+          pushSummarizationMaxLength: state.pushSummarizationMaxLength,
         })
       }
     ),
