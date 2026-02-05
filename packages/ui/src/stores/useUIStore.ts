@@ -90,6 +90,7 @@ interface UIStore {
   summarizeLastMessage: boolean;
   summaryThreshold: number;   // chars — messages longer than this get summarized
   summaryLength: number;      // chars — target length for summary
+  maxLastMessageLength: number; // chars — truncate {last_message} when summarization is off
 
   showTerminalQuickKeysOnDesktop: boolean;
 
@@ -158,6 +159,7 @@ interface UIStore {
   setSummarizeLastMessage: (value: boolean) => void;
   setSummaryThreshold: (value: number) => void;
   setSummaryLength: (value: number) => void;
+  setMaxLastMessageLength: (value: number) => void;
   openMultiRunLauncher: () => void;
   openMultiRunLauncherWithPrompt: (prompt: string) => void;
 }
@@ -235,6 +237,7 @@ export const useUIStore = create<UIStore>()(
         summarizeLastMessage: false,
         summaryThreshold: 200,
         summaryLength: 100,
+        maxLastMessageLength: 250,
 
         showTerminalQuickKeysOnDesktop: false,
 
@@ -730,6 +733,7 @@ export const useUIStore = create<UIStore>()(
         setSummarizeLastMessage: (value) => { set({ summarizeLastMessage: value }); },
         setSummaryThreshold: (value) => { set({ summaryThreshold: value }); },
         setSummaryLength: (value) => { set({ summaryLength: value }); },
+        setMaxLastMessageLength: (value) => { set({ maxLastMessageLength: value }); },
       }),
       {
         name: 'ui-store',
@@ -774,6 +778,7 @@ export const useUIStore = create<UIStore>()(
           summarizeLastMessage: state.summarizeLastMessage,
           summaryThreshold: state.summaryThreshold,
           summaryLength: state.summaryLength,
+          maxLastMessageLength: state.maxLastMessageLength,
         })
       }
     ),

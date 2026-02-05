@@ -544,11 +544,20 @@ const createTimeoutSignal = (timeoutMs) => {
   };
 };
 
+/** Humanize a project label: replace dashes/underscores with spaces, title-case each word. Mirrors the UI's formatProjectLabel. */
+const formatProjectLabel = (label) => {
+  if (!label || typeof label !== 'string') return '';
+  return label
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 const resolveNotificationTemplate = (template, variables) => {
   if (!template || typeof template !== 'string') return '';
-  return template.replace(/\{(\w+)\}/g, (match, key) => {
+  return template.replace(/\{(\w+)\}/g, (_match, key) => {
     const value = variables[key];
-    return value !== undefined && value !== null && value !== '' ? String(value) : match;
+    if (value === undefined || value === null) return '';
+    return String(value);
   });
 };
 
@@ -589,23 +598,45 @@ const summarizeText = async (text, targetLength) => {
   }
 };
 
-const extractLastMessageText = (payload) => {
+const NOTIFICATION_BODY_MAX_CHARS = 1000;
+
+/**
+ * Extract text from parts array (used when parts are available inline or fetched from API).
+ */
+const extractTextFromParts = (parts, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
+  if (!Array.isArray(parts) || parts.length === 0) return '';
+
+  const textParts = parts
+    .filter((p) => p && (p.type === 'text' || typeof p.text === 'string' || typeof p.content === 'string'))
+    .map((p) => p.text || p.content || '')
+    .filter(Boolean);
+
+  let text = textParts.length > 0 ? textParts.join('\n').trim() : '';
+
+  // Truncate to prevent oversized notification payloads
+  if (maxLength > 0 && text.length > maxLength) {
+    text = text.slice(0, maxLength);
+  }
+
+  return text;
+};
+
+/**
+ * Try to extract message text from the payload itself (fast path).
+ * Note: message.updated events from the OpenCode SSE stream typically do NOT include
+ * parts inline — parts are sent via separate message.part.updated events. This function
+ * is a fast path for the rare case where parts are included.
+ */
+const extractLastMessageText = (payload, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
   const info = payload?.properties?.info;
   if (!info) return '';
 
-  // Try to get text from message parts
+  // Try inline parts on info or on properties
   const parts = info.parts || payload?.properties?.parts;
-  if (Array.isArray(parts)) {
-    const textParts = parts
-      .filter((p) => p && (p.type === 'text' || typeof p.text === 'string' || typeof p.content === 'string'))
-      .map((p) => p.text || p.content || '')
-      .filter(Boolean);
-    if (textParts.length > 0) {
-      return textParts.join('\n').trim();
-    }
-  }
+  const text = extractTextFromParts(parts, maxLength);
+  if (text) return text;
 
-  // Fallback: try content array
+  // Fallback: try content array (legacy)
   const content = info.content;
   if (Array.isArray(content)) {
     const textContent = content
@@ -613,65 +644,202 @@ const extractLastMessageText = (payload) => {
       .map((c) => c.text || '')
       .filter(Boolean);
     if (textContent.length > 0) {
-      return textContent.join('\n').trim();
+      let result = textContent.join('\n').trim();
+      if (maxLength > 0 && result.length > maxLength) {
+        result = result.slice(0, maxLength);
+      }
+      return result;
     }
   }
 
   return '';
 };
 
+/**
+ * Fetch the last assistant message text from the OpenCode API.
+ * This is needed because message.updated events don't include parts;
+ * we must fetch them separately via the session messages endpoint.
+ */
+const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
+  if (!sessionId) return '';
+
+  try {
+    // Fetch last few messages to find the one that triggered the notification
+    const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
+    const response = await fetch(`${url}?limit=5`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(3000),
+    });
+
+    if (!response.ok) return '';
+
+    const messages = await response.json().catch(() => null);
+    if (!Array.isArray(messages)) return '';
+
+    // Find the specific message by ID, or fall back to the last assistant message
+    let target = null;
+    if (messageId) {
+      target = messages.find((m) => m?.info?.id === messageId && m?.info?.role === 'assistant');
+    }
+    if (!target) {
+      // Find the last assistant message with finish === 'stop'
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m?.info?.role === 'assistant' && m?.info?.finish === 'stop') {
+          target = m;
+          break;
+        }
+      }
+    }
+
+    if (!target || !Array.isArray(target.parts)) return '';
+
+    return extractTextFromParts(target.parts, maxLength);
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Fetch session metadata (title, directory) from the OpenCode API.
+ * Cached for 60s per session to avoid repeated API calls.
+ */
+const sessionInfoCache = new Map();
+const SESSION_INFO_CACHE_TTL_MS = 60 * 1000;
+
+const fetchSessionInfo = async (sessionId) => {
+  if (!sessionId) return null;
+
+  const cached = sessionInfoCache.get(sessionId);
+  if (cached && Date.now() - cached.at < SESSION_INFO_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  try {
+    const response = await fetch(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, ''), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    if (data && typeof data === 'object') {
+      sessionInfoCache.set(sessionId, { data, at: Date.now() });
+      return data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const buildTemplateVariables = async (payload, sessionId) => {
   const info = payload?.properties?.info || {};
-  const sessionTitle = payload?.properties?.sessionTitle ||
-    payload?.properties?.session?.title || '';
 
-  // Agent name from mode
+  // Session title — try payload first, then fetch from API
+  let sessionTitle = payload?.properties?.sessionTitle ||
+    payload?.properties?.session?.title ||
+    (typeof info.sessionTitle === 'string' ? info.sessionTitle : '') ||
+    '';
+
+  // Fetch session info from API for title and directory
+  let sessionInfo = null;
+  if (!sessionTitle && sessionId) {
+    sessionInfo = await fetchSessionInfo(sessionId);
+    if (sessionInfo && typeof sessionInfo.title === 'string') {
+      sessionTitle = sessionInfo.title;
+    }
+  }
+
+  // Agent name from mode or agent field (v2 has both mode and agent)
   const agentName = (() => {
-    const mode = typeof info.mode === 'string' ? info.mode.trim() : '';
+    const mode = typeof info.agent === 'string' && info.agent.trim().length > 0
+      ? info.agent.trim()
+      : (typeof info.mode === 'string' ? info.mode.trim() : '');
     if (!mode) return 'Agent';
     return mode.split(/[-_\s]+/).filter(Boolean)
       .map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ');
   })();
 
-  // Model name
+  // Model name — v2 has modelID directly on info, v1 user messages nest it under info.model.modelID
   const modelName = (() => {
-    const raw = typeof info.modelID === 'string' ? info.modelID.trim() : '';
+    const raw = typeof info.modelID === 'string' ? info.modelID.trim()
+      : (typeof info.model?.modelID === 'string' ? info.model.modelID.trim() : '');
     if (!raw) return 'Assistant';
     return raw.split(/[-_]+/).filter(Boolean)
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   })();
 
-  // Project name and branch — read from stored active project settings
+  // Project name, branch, worktree — derived from multiple sources with fallbacks
   let projectName = '';
   let branch = '';
-  let worktree = '';
+  let worktreeDir = '';
+
+  // 1. Primary source: the message payload's path (always accurate for the session)
+  const infoPath = info.path;
+  if (typeof infoPath?.root === 'string' && infoPath.root.length > 0) {
+    worktreeDir = infoPath.root;
+  } else if (typeof infoPath?.cwd === 'string' && infoPath.cwd.length > 0) {
+    worktreeDir = infoPath.cwd;
+  }
+
+  // 2. Look up the user-facing project label from stored settings
   try {
     const settings = await readSettingsFromDisk();
-    const projects = settings.projects || [];
-    const activeId = settings.activeProjectId;
-    const activeProject = activeId ? projects.find((p) => p.id === activeId) : projects[0];
-    if (activeProject) {
-      projectName = activeProject.name || activeProject.directory?.split('/').pop() || '';
-      worktree = activeProject.directory || '';
-    }
-    // Try to get branch from git for the active directory
-    if (worktree) {
-      try {
-        const { simpleGit } = await import('simple-git');
-        const git = simpleGit(worktree);
-        branch = await git.revparse(['--abbrev-ref', 'HEAD']).catch(() => '');
-      } catch {
-        // ignore
+    const projects = Array.isArray(settings.projects) ? settings.projects : [];
+
+    if (worktreeDir) {
+      // Match the session directory against stored projects to find the label
+      const normalizedDir = worktreeDir.replace(/\/+$/, '');
+      const matchedProject = projects.find((p) => {
+        if (!p || typeof p.path !== 'string') return false;
+        return p.path.replace(/\/+$/, '') === normalizedDir;
+      });
+      if (matchedProject && typeof matchedProject.label === 'string' && matchedProject.label.trim().length > 0) {
+        projectName = matchedProject.label.trim();
+      } else {
+        // No label stored — derive from directory name
+        projectName = normalizedDir.split('/').filter(Boolean).pop() || '';
+      }
+    } else {
+      // No directory from payload — fall back to active project
+      const activeId = typeof settings.activeProjectId === 'string' ? settings.activeProjectId : '';
+      const activeProject = activeId ? projects.find((p) => p && p.id === activeId) : projects[0];
+      if (activeProject) {
+        projectName = typeof activeProject.label === 'string' && activeProject.label.trim().length > 0
+          ? activeProject.label.trim()
+          : typeof activeProject.path === 'string'
+            ? activeProject.path.split('/').pop() || ''
+            : '';
+        worktreeDir = typeof activeProject.path === 'string' ? activeProject.path : '';
       }
     }
   } catch {
-    // ignore
+    // Settings read failed — derive from directory if available
+    if (worktreeDir && !projectName) {
+      projectName = worktreeDir.split('/').filter(Boolean).pop() || '';
+    }
+  }
+
+  // 3. Get branch from git
+  if (worktreeDir) {
+    try {
+      const { simpleGit } = await import('simple-git');
+      const git = simpleGit(worktreeDir);
+      branch = await Promise.race([
+        git.revparse(['--abbrev-ref', 'HEAD']),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('git timeout')), 3000)),
+      ]).catch(() => '');
+    } catch {
+      // ignore — git may not be available
+    }
   }
 
   return {
-    project_name: projectName,
-    worktree,
-    branch,
+    project_name: formatProjectLabel(projectName),
+    worktree: worktreeDir,
+    branch: typeof branch === 'string' ? branch.trim() : '',
     session_name: sessionTitle,
     agent_name: agentName,
     model_name: modelName,
@@ -1164,6 +1332,9 @@ const sanitizeSettingsUpdate = (payload) => {
   }
   if (typeof candidate.summaryLength === 'number' && Number.isFinite(candidate.summaryLength)) {
     result.summaryLength = Math.max(10, Math.round(candidate.summaryLength));
+  }
+  if (typeof candidate.maxLastMessageLength === 'number' && Number.isFinite(candidate.maxLastMessageLength)) {
+    result.maxLastMessageLength = Math.max(10, Math.round(candidate.maxLastMessageLength));
   }
   if (typeof candidate.usageAutoRefresh === 'boolean') {
     result.usageAutoRefresh = candidate.usageAutoRefresh;
@@ -2589,24 +2760,46 @@ const maybeSendPushForTrigger = async (payload) => {
       }
       lastReadyNotificationAt.set(sessionId, now);
 
-      // Get templates and build variables
-      const templates = settings.notificationTemplates || {};
-      const isSubtask = await fetchSessionParentId(sessionId);
-      const completionTemplate = isSubtask && settings.notifyOnSubtasks !== false
-        ? (templates.subtask || templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' })
-        : (templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' });
+      // Resolve templates with fallback to legacy hardcoded values
+      let title = `${formatMode(info?.mode)} agent is ready`;
+      let body = `${formatModelId(info?.modelID)} completed the task`;
 
-      const variables = await buildTemplateVariables(payload, sessionId);
-      let lastMessage = extractLastMessageText(payload);
+      try {
+        const templates = settings.notificationTemplates || {};
+        const isSubtask = await fetchSessionParentId(sessionId);
+        const completionTemplate = isSubtask && settings.notifyOnSubtasks !== false
+          ? (templates.subtask || templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' })
+          : (templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' });
 
-      // Summarize if enabled and above threshold
-      if (settings.summarizeLastMessage && lastMessage.length > (settings.summaryThreshold || 200)) {
-        lastMessage = await summarizeText(lastMessage, settings.summaryLength || 100);
+        const variables = await buildTemplateVariables(payload, sessionId);
+
+        // Try fast-path (inline parts) first, then fetch from API
+        const messageId = info?.id;
+        let lastMessage = extractLastMessageText(payload);
+        if (!lastMessage) {
+          lastMessage = await fetchLastAssistantMessageText(sessionId, messageId);
+        }
+
+        // Summarize if enabled and above threshold, otherwise truncate to maxLastMessageLength
+        if (settings.summarizeLastMessage && lastMessage.length > (settings.summaryThreshold || 200)) {
+          lastMessage = await summarizeText(lastMessage, settings.summaryLength || 100);
+        } else {
+          const maxLen = typeof settings.maxLastMessageLength === 'number' && settings.maxLastMessageLength > 0
+            ? settings.maxLastMessageLength
+            : 250;
+          if (lastMessage.length > maxLen) {
+            lastMessage = lastMessage.slice(0, maxLen) + '...';
+          }
+        }
+        variables.last_message = lastMessage;
+
+        const resolvedTitle = resolveNotificationTemplate(completionTemplate.title, variables);
+        const resolvedBody = resolveNotificationTemplate(completionTemplate.message, variables);
+        if (resolvedTitle) title = resolvedTitle;
+        if (resolvedBody) body = resolvedBody;
+      } catch (err) {
+        console.warn('[Notification] Template resolution failed, using defaults:', err?.message || err);
       }
-      variables.last_message = lastMessage;
-
-      const title = resolveNotificationTemplate(completionTemplate.title, variables) || `${formatMode(info?.mode)} agent is ready`;
-      const body = resolveNotificationTemplate(completionTemplate.message, variables) || `${formatModelId(info?.modelID)} completed the task`;
 
       if (settings.nativeNotificationsEnabled) {
         const notificationPayload = {
@@ -2641,16 +2834,40 @@ const maybeSendPushForTrigger = async (payload) => {
       const settings = await readSettingsFromDisk();
       if (settings.notifyOnError === false) return;
 
-      const variables = await buildTemplateVariables(payload, sessionId);
-      let lastMessage = extractLastMessageText(payload);
-      if (settings.summarizeLastMessage && lastMessage.length > (settings.summaryThreshold || 200)) {
-        lastMessage = await summarizeText(lastMessage, settings.summaryLength || 100);
-      }
-      variables.last_message = lastMessage;
+      let title = 'Tool error';
+      let body = 'An error occurred';
 
-      const errorTemplate = (settings.notificationTemplates || {}).error || { title: 'Tool error', message: '{last_message}' };
-      const title = resolveNotificationTemplate(errorTemplate.title, variables) || 'Tool error';
-      const body = resolveNotificationTemplate(errorTemplate.message, variables) || lastMessage || 'An error occurred';
+      try {
+        const variables = await buildTemplateVariables(payload, sessionId);
+
+        // Try fast-path (inline parts) first, then fetch from API
+        const errorMessageId = info?.id;
+        let lastMessage = extractLastMessageText(payload);
+        if (!lastMessage) {
+          lastMessage = await fetchLastAssistantMessageText(sessionId, errorMessageId);
+        }
+
+        // Summarize if enabled and above threshold, otherwise truncate to maxLastMessageLength
+        if (settings.summarizeLastMessage && lastMessage.length > (settings.summaryThreshold || 200)) {
+          lastMessage = await summarizeText(lastMessage, settings.summaryLength || 100);
+        } else {
+          const maxLen = typeof settings.maxLastMessageLength === 'number' && settings.maxLastMessageLength > 0
+            ? settings.maxLastMessageLength
+            : 250;
+          if (lastMessage.length > maxLen) {
+            lastMessage = lastMessage.slice(0, maxLen) + '...';
+          }
+        }
+        variables.last_message = lastMessage;
+
+        const errorTemplate = (settings.notificationTemplates || {}).error || { title: 'Tool error', message: '{last_message}' };
+        const resolvedTitle = resolveNotificationTemplate(errorTemplate.title, variables);
+        const resolvedBody = resolveNotificationTemplate(errorTemplate.message, variables);
+        if (resolvedTitle) title = resolvedTitle;
+        if (resolvedBody) body = resolvedBody;
+      } catch (err) {
+        console.warn('[Notification] Error template resolution failed, using defaults:', err?.message || err);
+      }
 
       if (settings.nativeNotificationsEnabled) {
         const notificationPayload = {
@@ -2708,25 +2925,31 @@ const maybeSendPushForTrigger = async (payload) => {
       const header = typeof firstQuestion?.header === 'string' ? firstQuestion.header.trim() : '';
       const questionText = typeof firstQuestion?.question === 'string' ? firstQuestion.question.trim() : '';
 
-      // Build template variables
-      const variables = await buildTemplateVariables(payload, sessionId);
-      variables.last_message = questionText || header || '';
-
-      // Get question template
-      const templates = settings.notificationTemplates || {};
-      const questionTemplate = templates.question || { title: 'Input needed', message: '{last_message}' };
-
-      // Resolve templates with fallback to legacy behavior
-      const rawTitle = resolveNotificationTemplate(questionTemplate.title, variables);
-      const rawBody = resolveNotificationTemplate(questionTemplate.message, variables);
-
-      // Fallback to legacy behavior if templates don't resolve
-      const title = rawTitle || (/plan\s*mode/i.test(header)
+      // Legacy fallback title
+      let title = /plan\s*mode/i.test(header)
         ? 'Switch to plan mode'
         : /build\s*agent/i.test(header)
           ? 'Switch to build mode'
-          : header || 'Input needed');
-      const body = rawBody || questionText || 'Agent is waiting for your response';
+          : header || 'Input needed';
+      let body = questionText || 'Agent is waiting for your response';
+
+      try {
+        // Build template variables
+        const variables = await buildTemplateVariables(payload, sessionId);
+        variables.last_message = questionText || header || '';
+
+        // Get question template
+        const templates = settings.notificationTemplates || {};
+        const questionTemplate = templates.question || { title: 'Input needed', message: '{last_message}' };
+
+        // Resolve templates with fallback to legacy behavior
+        const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
+        const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
+        if (resolvedTitle) title = resolvedTitle;
+        if (resolvedBody) body = resolvedBody;
+      } catch (err) {
+        console.warn('[Notification] Question template resolution failed, using defaults:', err?.message || err);
+      }
 
       if (settings.nativeNotificationsEnabled) {
         emitDesktopNotification({
@@ -2793,21 +3016,32 @@ const maybeSendPushForTrigger = async (payload) => {
         // Still send push even if native notifications are disabled
       }
 
-      // Build template variables
-      const variables = await buildTemplateVariables(payload, sessionId);
       const sessionTitle = payload.properties?.sessionTitle;
       const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : '';
-      variables.last_message = typeof sessionTitle === 'string' && sessionTitle.trim().length > 0
+      const fallbackMessage = typeof sessionTitle === 'string' && sessionTitle.trim().length > 0
         ? sessionTitle.trim()
         : permissionText || 'Agent is waiting for your approval';
 
-      // Get question template (permission uses question template since it's an input request)
-      const templates = settings.notificationTemplates || {};
-      const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' };
+      let title = 'Permission required';
+      let body = fallbackMessage;
 
-      // Resolve templates with fallback to legacy behavior
-      const title = resolveNotificationTemplate(questionTemplate.title, variables) || 'Permission required';
-      const body = resolveNotificationTemplate(questionTemplate.message, variables) || variables.last_message;
+      try {
+        // Build template variables
+        const variables = await buildTemplateVariables(payload, sessionId);
+        variables.last_message = fallbackMessage;
+
+        // Get question template (permission uses question template since it's an input request)
+        const templates = settings.notificationTemplates || {};
+        const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' };
+
+        // Resolve templates with fallback to legacy behavior
+        const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
+        const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
+        if (resolvedTitle) title = resolvedTitle;
+        if (resolvedBody) body = resolvedBody;
+      } catch (err) {
+        console.warn('[Notification] Permission template resolution failed, using defaults:', err?.message || err);
+      }
 
       if (settings.nativeNotificationsEnabled) {
         emitDesktopNotification({

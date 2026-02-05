@@ -65,6 +65,7 @@ export type DesktopSettings = {
   summarizeLastMessage?: boolean;
   summaryThreshold?: number;
   summaryLength?: number;
+  maxLastMessageLength?: number;
 
   usageAutoRefresh?: boolean;
   usageRefreshIntervalMs?: number;

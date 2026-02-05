@@ -20,6 +20,7 @@ type AppearanceSlice = {
   summarizeLastMessage: boolean;
   summaryThreshold: number;
   summaryLength: number;
+  maxLastMessageLength: number;
   autoDeleteEnabled: boolean;
   autoDeleteAfterDays: number;
   toolCallExpansion: 'collapsed' | 'activity' | 'detailed';
@@ -54,6 +55,7 @@ export const startAppearanceAutoSave = (): void => {
     summarizeLastMessage: useUIStore.getState().summarizeLastMessage,
     summaryThreshold: useUIStore.getState().summaryThreshold,
     summaryLength: useUIStore.getState().summaryLength,
+    maxLastMessageLength: useUIStore.getState().maxLastMessageLength,
     autoDeleteEnabled: useUIStore.getState().autoDeleteEnabled,
     autoDeleteAfterDays: useUIStore.getState().autoDeleteAfterDays,
     toolCallExpansion: useUIStore.getState().toolCallExpansion,
@@ -100,6 +102,7 @@ export const startAppearanceAutoSave = (): void => {
       summarizeLastMessage: state.summarizeLastMessage,
       summaryThreshold: state.summaryThreshold,
       summaryLength: state.summaryLength,
+      maxLastMessageLength: state.maxLastMessageLength,
       autoDeleteEnabled: state.autoDeleteEnabled,
       autoDeleteAfterDays: state.autoDeleteAfterDays,
       toolCallExpansion: state.toolCallExpansion,
@@ -149,6 +152,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.summaryLength !== previous.summaryLength) {
       diff.summaryLength = current.summaryLength;
+    }
+    if (current.maxLastMessageLength !== previous.maxLastMessageLength) {
+      diff.maxLastMessageLength = current.maxLastMessageLength;
     }
     if (current.autoDeleteEnabled !== previous.autoDeleteEnabled) {
       diff.autoDeleteEnabled = current.autoDeleteEnabled;

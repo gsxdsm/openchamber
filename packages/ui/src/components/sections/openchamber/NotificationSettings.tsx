@@ -25,6 +25,14 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
   const notificationTemplates = useUIStore(state => state.notificationTemplates);
   const setNotificationTemplates = useUIStore(state => state.setNotificationTemplates);
+  const summarizeLastMessage = useUIStore(state => state.summarizeLastMessage);
+  const setSummarizeLastMessage = useUIStore(state => state.setSummarizeLastMessage);
+  const summaryThreshold = useUIStore(state => state.summaryThreshold);
+  const setSummaryThreshold = useUIStore(state => state.setSummaryThreshold);
+  const summaryLength = useUIStore(state => state.summaryLength);
+  const setSummaryLength = useUIStore(state => state.setSummaryLength);
+  const maxLastMessageLength = useUIStore(state => state.maxLastMessageLength);
+  const setMaxLastMessageLength = useUIStore(state => state.setMaxLastMessageLength);
 
   const [notificationPermission, setNotificationPermission] = React.useState<NotificationPermission>('default');
   const [pushSupported, setPushSupported] = React.useState(false);
@@ -430,24 +438,6 @@ export const NotificationSettings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="typography-ui text-foreground">
-              Include subagent results
-            </span>
-            <p className="typography-micro text-muted-foreground">
-              Also notify for child sessions started by the main one.
-            </p>
-          </div>
-          <Switch
-            checked={notifyOnSubtasks}
-            onCheckedChange={(checked: boolean) => setNotifyOnSubtasks(checked)}
-            className="data-[state=checked]:bg-status-info"
-          />
-        </div>
-      )}
-
-      {nativeNotificationsEnabled && canShowNotifications && (
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="typography-ui text-foreground">
               Notify while app is focused
             </span>
             <p className="typography-micro text-muted-foreground">
@@ -508,6 +498,18 @@ export const NotificationSettings: React.FC = () => {
               className="data-[state=checked]:bg-status-info"
             />
           </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="typography-ui text-foreground">Subagents</span>
+              <p className="typography-micro text-muted-foreground">Also notify for child sessions started by the main one.</p>
+            </div>
+            <Switch
+              checked={notifyOnSubtasks}
+              onCheckedChange={(checked: boolean) => setNotifyOnSubtasks(checked)}
+              className="data-[state=checked]:bg-status-info"
+            />
+          </div>
         </div>
       )}
 
@@ -554,6 +556,102 @@ export const NotificationSettings: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {nativeNotificationsEnabled && canShowNotifications && (
+        <div className="space-y-3 pt-4">
+          <div className="space-y-1">
+            <h3 className="typography-ui-header font-semibold text-foreground">
+              Summarization
+            </h3>
+            <p className="typography-micro text-muted-foreground">
+              Summarize long messages in notifications using AI.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="typography-ui text-foreground">
+                Summarize last message
+              </span>
+              <p className="typography-micro text-muted-foreground">
+                Uses AI to shorten the {'{last_message}'} variable.
+              </p>
+            </div>
+            <Switch
+              checked={summarizeLastMessage}
+              onCheckedChange={setSummarizeLastMessage}
+              className="data-[state=checked]:bg-status-info"
+            />
+          </div>
+
+          {summarizeLastMessage ? (
+            <>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="typography-ui text-foreground">
+                    Summary threshold
+                  </label>
+                  <span className="typography-micro text-muted-foreground tabular-nums">{summaryThreshold} chars</span>
+                </div>
+                <p className="typography-micro text-muted-foreground">
+                  Messages longer than this will be summarized.
+                </p>
+                <input
+                  type="range"
+                  min={50}
+                  max={2000}
+                  step={50}
+                  value={summaryThreshold}
+                  onChange={(e) => setSummaryThreshold(Number(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="typography-ui text-foreground">
+                    Summary length
+                  </label>
+                  <span className="typography-micro text-muted-foreground tabular-nums">{summaryLength} chars</span>
+                </div>
+                <p className="typography-micro text-muted-foreground">
+                  Target length of the summary.
+                </p>
+                <input
+                  type="range"
+                  min={20}
+                  max={500}
+                  step={10}
+                  value={summaryLength}
+                  onChange={(e) => setSummaryLength(Number(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="typography-ui text-foreground">
+                  Max last message length
+                </label>
+                <span className="typography-micro text-muted-foreground tabular-nums">{maxLastMessageLength} chars</span>
+              </div>
+              <p className="typography-micro text-muted-foreground">
+                Truncate {'{last_message}'} to this many characters.
+              </p>
+              <input
+                type="range"
+                min={50}
+                max={1000}
+                step={10}
+                value={maxLastMessageLength}
+                onChange={(e) => setMaxLastMessageLength(Number(e.target.value))}
+                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+              />
+            </div>
+          )}
         </div>
       )}
 
