@@ -1008,6 +1008,27 @@ const sanitizeSettingsUpdate = (payload) => {
   if (typeof candidate.notifyOnSubtasks === 'boolean') {
     result.notifyOnSubtasks = candidate.notifyOnSubtasks;
   }
+  if (typeof candidate.notifyOnCompletion === 'boolean') {
+    result.notifyOnCompletion = candidate.notifyOnCompletion;
+  }
+  if (typeof candidate.notifyOnError === 'boolean') {
+    result.notifyOnError = candidate.notifyOnError;
+  }
+  if (typeof candidate.notifyOnQuestion === 'boolean') {
+    result.notifyOnQuestion = candidate.notifyOnQuestion;
+  }
+  if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
+    result.notificationTemplates = candidate.notificationTemplates;
+  }
+  if (typeof candidate.summarizeLastMessage === 'boolean') {
+    result.summarizeLastMessage = candidate.summarizeLastMessage;
+  }
+  if (typeof candidate.summaryThreshold === 'number' && Number.isFinite(candidate.summaryThreshold)) {
+    result.summaryThreshold = Math.max(0, Math.round(candidate.summaryThreshold));
+  }
+  if (typeof candidate.summaryLength === 'number' && Number.isFinite(candidate.summaryLength)) {
+    result.summaryLength = Math.max(10, Math.round(candidate.summaryLength));
+  }
   if (typeof candidate.usageAutoRefresh === 'boolean') {
     result.usageAutoRefresh = candidate.usageAutoRefresh;
   }
