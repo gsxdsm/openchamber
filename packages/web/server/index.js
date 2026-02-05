@@ -2528,7 +2528,13 @@ function broadcastUiNotification(payload) {
     try {
       writeSseEvent(res, {
         type: 'openchamber:notification',
-        properties: payload,
+        properties: {
+          ...payload,
+          // Tell the UI whether the sidecar stdout notification channel is active.
+          // When true, the desktop UI should skip this SSE notification to avoid duplicates.
+          // When false (e.g. tauri dev), the UI must handle this SSE notification itself.
+          desktopStdoutActive: ENV_DESKTOP_NOTIFY,
+        },
       });
     } catch {
       // ignore
