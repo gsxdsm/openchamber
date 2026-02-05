@@ -1,0 +1,13 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Session linking between OpenChamber and Hive",
+  "dependsOn": [
+    "01-server-side-hive-service-and-api-routes",
+    "02-zustand-hive-store",
+    "05-feature-detail-panel-and-create-feature-dialog"
+  ],
+  "summary": "Integrated session linking in FeaturePanel: Link Current Session button, clickable session IDs navigate to Chat tab.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T21:14:43.886Z"
+}

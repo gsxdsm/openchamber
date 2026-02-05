@@ -1,0 +1,12 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Build verification",
+  "dependsOn": [
+    "04-rewrite-planpanel-with-markdown-rendering-and-comments",
+    "05-rewrite-hivesidebar-as-expandable-tree"
+  ],
+  "summary": "type-check: 0 errors across all 4 packages. lint: 0 errors (2 pre-existing warnings in unrelated files). build: all packages succeed.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:25:06.124Z"
+}

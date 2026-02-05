@@ -15,7 +15,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useEdgeSwipe } from '@/hooks/useEdgeSwipe';
 import { cn } from '@/lib/utils';
 
-import { ChatView, PlanView, GitView, DiffView, TerminalView, FilesView, SettingsView, SettingsWindow } from '@/components/views';
+import { ChatView, PlanView, GitView, DiffView, TerminalView, FilesView, SettingsView, SettingsWindow, HiveView } from '@/components/views';
 
 export const MainLayout: React.FC = () => {
     const {
@@ -295,6 +295,8 @@ export const MainLayout: React.FC = () => {
                 return <TerminalView />;
             case 'files':
                 return <FilesView />;
+            case 'hive':
+                return <HiveView />;
             default:
                 return null;
         }

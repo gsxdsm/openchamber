@@ -1,0 +1,11 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Context files panel",
+  "dependsOn": [
+    "04-hiveview-root-component-with-sidebar--content-layout"
+  ],
+  "summary": "Created ContextPanel.tsx with list/detail views, create/edit/delete actions.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T21:14:42.220Z"
+}

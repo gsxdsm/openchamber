@@ -1,0 +1,12 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Update useHiveStore with comment types and summary state",
+  "dependsOn": [
+    "01-add-comment-crud-to-hive-servicejs",
+    "02-add-feature-summary-endpoint-to-hive-servicejs"
+  ],
+  "summary": "Added HivePlanComment, HiveFeatureSummary types. Added featureSummaries state, fetchFeatureSummaries, addComment, deleteComment actions. Updated fetchFeatureDetail to include comments. Updated polling to fetch summaries.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:24:58.823Z"
+}

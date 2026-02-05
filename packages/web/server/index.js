@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import crypto from 'crypto';
 import { createUiAuth } from './lib/ui-auth.js';
+import { createHiveRoutes } from './lib/hive-service.js';
 import { startCloudflareTunnel, printTunnelWarning, checkCloudflaredAvailable } from './lib/cloudflare-tunnel.js';
 import { createOpencodeServer } from '@opencode-ai/sdk/server';
 import webPush from 'web-push';
@@ -6637,7 +6638,10 @@ async function main(options = {}) {
       console.error('Failed to get commit files:', error);
       res.status(500).json({ error: error.message || 'Failed to get commit files' });
     }
-  });
+   });
+
+  // ─── Hive (Agent-Hive integration) ───────────────────────────────────────
+  createHiveRoutes(app);
 
   app.get('/api/fs/home', (req, res) => {
     try {

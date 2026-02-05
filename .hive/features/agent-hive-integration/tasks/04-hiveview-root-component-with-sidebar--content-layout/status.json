@@ -1,0 +1,12 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "HiveView root component with sidebar + content layout",
+  "dependsOn": [
+    "02-zustand-hive-store",
+    "03-register-the-hive-tab-in-openchamber-navigation"
+  ],
+  "summary": "Created HiveView.tsx (sidebar+content), HiveEmptyState.tsx, HiveHeader.tsx, HiveSidebar.tsx, StatusBadge.tsx.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T21:14:36.269Z"
+}

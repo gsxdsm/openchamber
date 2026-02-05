@@ -1,0 +1,9 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Add feature summary endpoint to hive-service.js",
+  "dependsOn": [],
+  "summary": "Added getFeatureSummary, getAllFeatureSummaries functions + GET /api/hive/summaries route returning lightweight metadata for all features",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:24:56.027Z"
+}

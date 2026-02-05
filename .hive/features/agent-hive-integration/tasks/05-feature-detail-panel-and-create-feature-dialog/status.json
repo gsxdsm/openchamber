@@ -1,0 +1,11 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Feature detail panel and create feature dialog",
+  "dependsOn": [
+    "04-hiveview-root-component-with-sidebar--content-layout"
+  ],
+  "summary": "Created FeaturePanel.tsx with navigation cards, session linking, and CreateFeatureDialog.tsx.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T21:14:37.745Z"
+}

@@ -1,0 +1,10 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Register the Hive tab in OpenChamber navigation",
+  "dependsOn": [],
+  "schemaVersion": 1,
+  "startedAt": "2026-02-04T21:06:46.413Z",
+  "summary": "Added 'hive' to MainTab union, added tab config with RiHexagonLine icon, added case in MainLayout switch, exported HiveView from views index.",
+  "completedAt": "2026-02-04T21:14:34.491Z"
+}

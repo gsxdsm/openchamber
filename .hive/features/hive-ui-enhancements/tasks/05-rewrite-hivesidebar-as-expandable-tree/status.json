@@ -1,0 +1,11 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Rewrite HiveSidebar as expandable tree",
+  "dependsOn": [
+    "03-update-usehivestore-with-comment-types-and-summary-state"
+  ],
+  "summary": "Replaced flat feature list with 4-level expandable tree: status groups → features → plan/context/tasks → individual items. Uses featureSummaries for data. Click-to-navigate for all tree nodes. 79→331 lines.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:25:04.082Z"
+}

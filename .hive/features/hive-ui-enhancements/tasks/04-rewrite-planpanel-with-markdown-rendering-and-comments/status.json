@@ -1,0 +1,11 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Rewrite PlanPanel with markdown rendering and comments",
+  "dependsOn": [
+    "03-update-usehivestore-with-comment-types-and-summary-state"
+  ],
+  "summary": "Replaced pre tag with SimpleMarkdownRenderer. Added comments section with add/delete/send-to-chat functionality. Blocks approve when comments exist. 125→340 lines.",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:25:01.273Z"
+}

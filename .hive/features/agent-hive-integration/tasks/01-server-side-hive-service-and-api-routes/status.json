@@ -1,0 +1,10 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Server-side Hive service and API routes",
+  "dependsOn": [],
+  "schemaVersion": 1,
+  "startedAt": "2026-02-04T21:06:44.680Z",
+  "summary": "Created hive-service.js with full CRUD for features, plans, tasks, context files, and sessions. Mounted /api/hive/* routes in Express server.",
+  "completedAt": "2026-02-04T21:14:30.464Z"
+}

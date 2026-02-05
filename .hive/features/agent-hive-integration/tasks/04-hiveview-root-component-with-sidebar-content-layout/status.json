@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "HiveView root component with sidebar + content layout",
+  "dependsOn": [
+    "02-zustand-hive-store",
+    "03-register-the-hive-tab-in-openchamber-navigation"
+  ],
+  "summary": "Duplicate of completed task 04 (different slug). Already done.",
+  "completedAt": "2026-02-04T21:32:27.869Z"
+}

@@ -1,0 +1,10 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Tasks panel and task detail panel",
+  "dependsOn": [],
+  "schemaVersion": 1,
+  "startedAt": "2026-02-04T21:06:47.291Z",
+  "summary": "Created TasksPanel.tsx with progress bar and task list, TaskDetailPanel.tsx with status selector and spec/report display, CreateTaskDialog.tsx.",
+  "completedAt": "2026-02-04T21:14:41.108Z"
+}

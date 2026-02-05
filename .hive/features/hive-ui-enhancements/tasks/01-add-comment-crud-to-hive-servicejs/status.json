@@ -1,0 +1,9 @@
+{
+  "status": "done",
+  "origin": "plan",
+  "planTitle": "Add comment CRUD to hive-service.js",
+  "dependsOn": [],
+  "summary": "Added getComments, addComment, deleteComment functions + 3 API routes (GET/POST/DELETE) for /api/hive/features/:name/comments",
+  "schemaVersion": 1,
+  "completedAt": "2026-02-04T22:24:54.354Z"
+}
