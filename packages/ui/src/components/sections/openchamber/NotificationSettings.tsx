@@ -23,6 +23,8 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnError = useUIStore(state => state.setNotifyOnError);
   const notifyOnQuestion = useUIStore(state => state.notifyOnQuestion);
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
+  const notificationTemplates = useUIStore(state => state.notificationTemplates);
+  const setNotificationTemplates = useUIStore(state => state.setNotificationTemplates);
 
   const [notificationPermission, setNotificationPermission] = React.useState<NotificationPermission>('default');
   const [pushSupported, setPushSupported] = React.useState(false);
@@ -101,6 +103,20 @@ export const NotificationSettings: React.FC = () => {
   };
 
   const canShowNotifications = isDesktop || (isBrowser && typeof Notification !== 'undefined' && Notification.permission === 'granted');
+
+  const updateTemplate = (
+    event: 'completion' | 'error' | 'question' | 'subtask',
+    field: 'title' | 'message',
+    value: string,
+  ) => {
+    setNotificationTemplates({
+      ...notificationTemplates,
+      [event]: {
+        ...notificationTemplates[event],
+        [field]: value,
+      },
+    });
+  };
 
   const base64UrlToUint8Array = (base64Url: string): Uint8Array<ArrayBuffer> => {
     const padding = '='.repeat((4 - (base64Url.length % 4)) % 4);
@@ -492,6 +508,52 @@ export const NotificationSettings: React.FC = () => {
               className="data-[state=checked]:bg-status-info"
             />
           </div>
+        </div>
+      )}
+
+      {nativeNotificationsEnabled && canShowNotifications && (
+        <div className="space-y-4 pt-4">
+          <div className="space-y-1">
+            <h3 className="typography-ui-header font-semibold text-foreground">
+              Customize content
+            </h3>
+            <p className="typography-micro text-muted-foreground">
+              Use template variables: <code className="text-accent-foreground">{'{project_name}'}</code>{' '}
+              <code className="text-accent-foreground">{'{worktree}'}</code>{' '}
+              <code className="text-accent-foreground">{'{branch}'}</code>{' '}
+              <code className="text-accent-foreground">{'{session_name}'}</code>{' '}
+              <code className="text-accent-foreground">{'{agent_name}'}</code>{' '}
+              <code className="text-accent-foreground">{'{last_message}'}</code>
+            </p>
+          </div>
+
+          {(['completion', 'error', 'question', 'subtask'] as const).map((event) => (
+            <div key={event} className="space-y-2">
+              <span className="typography-ui text-foreground font-medium capitalize">{event}</span>
+              <div className="space-y-1.5">
+                <div>
+                  <label className="typography-micro text-muted-foreground block mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={notificationTemplates[event].title}
+                    onChange={(e) => updateTemplate(event, 'title', e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 typography-ui text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder={`Title for ${event} notifications`}
+                  />
+                </div>
+                <div>
+                  <label className="typography-micro text-muted-foreground block mb-1">Message</label>
+                  <input
+                    type="text"
+                    value={notificationTemplates[event].message}
+                    onChange={(e) => updateTemplate(event, 'message', e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 typography-ui text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder={`Message for ${event} notifications`}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
