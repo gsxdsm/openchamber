@@ -702,6 +702,39 @@ const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = N
 };
 
 /**
+ * In-memory cache of session titles populated from SSE session.updated / session.created events.
+ * This is the preferred source for session titles since it is populated passively and doesn't
+ * require a separate API call.
+ */
+const sessionTitleCache = new Map();
+
+const cacheSessionTitle = (sessionId, title) => {
+  if (typeof sessionId === 'string' && sessionId.length > 0 &&
+      typeof title === 'string' && title.length > 0) {
+    sessionTitleCache.set(sessionId, title);
+  }
+};
+
+const getCachedSessionTitle = (sessionId) => {
+  return sessionTitleCache.get(sessionId) ?? null;
+};
+
+/**
+ * Extract and cache session title from session.updated / session.created SSE events.
+ * Called by the global event watcher to passively maintain the title cache.
+ */
+const maybeCacheSessionInfoFromEvent = (payload) => {
+  if (!payload || typeof payload !== 'object') return;
+  const type = payload.type;
+  if (type !== 'session.updated' && type !== 'session.created') return;
+  const info = payload.properties?.info;
+  if (!info || typeof info !== 'object') return;
+  const sessionId = info.id;
+  const title = info.title;
+  cacheSessionTitle(sessionId, title);
+};
+
+/**
  * Fetch session metadata (title, directory) from the OpenCode API.
  * Cached for 60s per session to avoid repeated API calls.
  */
@@ -717,19 +750,24 @@ const fetchSessionInfo = async (sessionId) => {
   }
 
   try {
-    const response = await fetch(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, ''), {
+    const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
+    const response = await fetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(2000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`[Notification] fetchSessionInfo: ${response.status} for session ${sessionId}`);
+      return null;
+    }
     const data = await response.json().catch(() => null);
     if (data && typeof data === 'object') {
       sessionInfoCache.set(sessionId, { data, at: Date.now() });
       return data;
     }
     return null;
-  } catch {
+  } catch (err) {
+    console.warn(`[Notification] fetchSessionInfo failed for ${sessionId}:`, err?.message || err);
     return null;
   }
 };
@@ -737,18 +775,28 @@ const fetchSessionInfo = async (sessionId) => {
 const buildTemplateVariables = async (payload, sessionId) => {
   const info = payload?.properties?.info || {};
 
-  // Session title — try payload first, then fetch from API
+  // Session title — try inline payload, then SSE cache, then API fetch
   let sessionTitle = payload?.properties?.sessionTitle ||
     payload?.properties?.session?.title ||
     (typeof info.sessionTitle === 'string' ? info.sessionTitle : '') ||
     '';
 
-  // Fetch session info from API for title and directory
+  // Try the SSE-populated session title cache (filled from session.updated / session.created events)
+  if (!sessionTitle && sessionId) {
+    const cached = getCachedSessionTitle(sessionId);
+    if (cached) {
+      sessionTitle = cached;
+    }
+  }
+
+  // Last resort: fetch session info from the API
   let sessionInfo = null;
   if (!sessionTitle && sessionId) {
     sessionInfo = await fetchSessionInfo(sessionId);
     if (sessionInfo && typeof sessionInfo.title === 'string') {
       sessionTitle = sessionInfo.title;
+      // Populate the SSE cache so future notifications don't need an API call
+      cacheSessionTitle(sessionId, sessionTitle);
     }
   }
 
@@ -2245,6 +2293,8 @@ const startGlobalEventWatcher = async () => {
             const block = buffer.slice(0, separatorIndex);
             buffer = buffer.slice(separatorIndex + 2);
             const payload = parseSseDataPayload(block);
+            // Cache session titles from session.updated/session.created events
+            maybeCacheSessionInfoFromEvent(payload);
             void maybeSendPushForTrigger(payload);
             // Track session activity independently of UI (mirrors Tauri desktop behavior)
             const transitions = deriveSessionActivityTransitions(payload);
@@ -4066,7 +4116,7 @@ async function main(options = {}) {
     let targetUrl;
     try {
       targetUrl = new URL(buildOpenCodeUrl('/global/event', ''));
-    } catch (error) {
+    } catch {
       return res.status(503).json({ error: 'OpenCode service unavailable' });
     }
 
@@ -4135,6 +4185,8 @@ async function main(options = {}) {
 
 `);
       const payload = parseSseDataPayload(block);
+      // Cache session titles from session.updated/session.created events (global stream)
+      maybeCacheSessionInfoFromEvent(payload);
       const transitions = deriveSessionActivityTransitions(payload);
       if (transitions && transitions.length > 0) {
         for (const activity of transitions) {
@@ -4188,7 +4240,7 @@ async function main(options = {}) {
     let targetUrl;
     try {
       targetUrl = new URL(buildOpenCodeUrl('/event', ''));
-    } catch (error) {
+    } catch {
       return res.status(503).json({ error: 'OpenCode service unavailable' });
     }
 
@@ -4259,6 +4311,8 @@ async function main(options = {}) {
 
 `);
       const payload = parseSseDataPayload(block);
+      // Cache session titles from session.updated/session.created events (per-session stream)
+      maybeCacheSessionInfoFromEvent(payload);
       const transitions = deriveSessionActivityTransitions(payload);
       if (transitions && transitions.length > 0) {
         for (const activity of transitions) {
