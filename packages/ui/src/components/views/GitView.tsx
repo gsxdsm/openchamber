@@ -366,6 +366,58 @@ export const GitView: React.FC = () => {
   const [conflictDialogOpen, setConflictDialogOpen] = React.useState(false);
   const [conflictFiles, setConflictFiles] = React.useState<string[]>([]);
   const [conflictOperation, setConflictOperation] = React.useState<'merge' | 'rebase'>('merge');
+
+  // Conflict state persistence key
+  const conflictStorageKey = React.useMemo(() => {
+    if (!currentSessionId) return null;
+    return `openchamber.conflict:${currentSessionId}`;
+  }, [currentSessionId]);
+
+  // Save conflict state to localStorage
+  const persistConflictState = React.useCallback((
+    directory: string,
+    files: string[],
+    operation: 'merge' | 'rebase'
+  ) => {
+    if (!conflictStorageKey || typeof window === 'undefined') return;
+    const payload = { directory, conflictFiles: files, operation };
+    window.localStorage.setItem(conflictStorageKey, JSON.stringify(payload));
+  }, [conflictStorageKey]);
+
+  // Clear conflict state from localStorage
+  const clearConflictState = React.useCallback(() => {
+    if (!conflictStorageKey || typeof window === 'undefined') return;
+    window.localStorage.removeItem(conflictStorageKey);
+  }, [conflictStorageKey]);
+
+  // Restore conflict state from localStorage on mount
+  React.useEffect(() => {
+    if (!conflictStorageKey || typeof window === 'undefined' || !currentDirectory) return;
+
+    const raw = window.localStorage.getItem(conflictStorageKey);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        directory: string;
+        conflictFiles: string[];
+        operation: 'merge' | 'rebase';
+      };
+
+      // Validate the stored state matches current directory
+      if (parsed.directory !== currentDirectory) {
+        window.localStorage.removeItem(conflictStorageKey);
+        return;
+      }
+
+      // Restore conflict state
+      setConflictFiles(parsed.conflictFiles ?? []);
+      setConflictOperation(parsed.operation ?? 'merge');
+      setConflictDialogOpen(true);
+    } catch {
+      window.localStorage.removeItem(conflictStorageKey);
+    }
+  }, [conflictStorageKey, currentDirectory]);
   const [stashDialogOpen, setStashDialogOpen] = React.useState(false);
   const [stashDialogOperation, setStashDialogOperation] = React.useState<'merge' | 'rebase'>('merge');
   const [stashDialogBranch, setStashDialogBranch] = React.useState('');
@@ -1063,6 +1115,7 @@ export const GitView: React.FC = () => {
           setConflictFiles(result.conflictFiles ?? []);
           setConflictOperation('merge');
           setConflictDialogOpen(true);
+          persistConflictState(currentDirectory, result.conflictFiles ?? [], 'merge');
         } else {
           toast.success(`Merged ${branch} into ${currentBranch}`);
           await refreshStatusAndBranches();
@@ -1081,7 +1134,7 @@ export const GitView: React.FC = () => {
         setBranchOperation(null);
       }
     },
-    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError]
+    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError, persistConflictState]
   );
 
   const handleRebase = React.useCallback(
@@ -1098,6 +1151,7 @@ export const GitView: React.FC = () => {
           setConflictFiles(result.conflictFiles ?? []);
           setConflictOperation('rebase');
           setConflictDialogOpen(true);
+          persistConflictState(currentDirectory, result.conflictFiles ?? [], 'rebase');
         } else {
           toast.success(`Rebased ${currentBranch} onto ${branch}`);
           await refreshStatusAndBranches();
@@ -1116,7 +1170,7 @@ export const GitView: React.FC = () => {
         setBranchOperation(null);
       }
     },
-    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError]
+    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError, persistConflictState]
   );
 
   const handleAbortConflict = React.useCallback(async () => {
@@ -1130,13 +1184,14 @@ export const GitView: React.FC = () => {
         await git.abortRebase(currentDirectory);
         toast.success('Rebase aborted');
       }
+      clearConflictState();
       await refreshStatusAndBranches();
       await refreshLog();
     } catch (err) {
       const message = err instanceof Error ? err.message : `Failed to abort ${conflictOperation}`;
       toast.error(message);
     }
-  }, [currentDirectory, git, conflictOperation, refreshStatusAndBranches, refreshLog]);
+  }, [currentDirectory, git, conflictOperation, refreshStatusAndBranches, refreshLog, clearConflictState]);
 
   const handleStashAndRetry = React.useCallback(
     async (restoreAfter: boolean) => {
@@ -1424,6 +1479,7 @@ export const GitView: React.FC = () => {
           directory={currentDirectory}
           operation={conflictOperation}
           onAbort={handleAbortConflict}
+          onClearState={clearConflictState}
         />
       )}
 

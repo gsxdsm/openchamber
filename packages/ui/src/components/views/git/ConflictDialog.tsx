@@ -24,6 +24,7 @@ interface ConflictDialogProps {
   directory: string;
   operation: 'merge' | 'rebase';
   onAbort: () => void;
+  onClearState?: () => void;
 }
 
 export const ConflictDialog: React.FC<ConflictDialogProps> = ({
@@ -33,6 +34,7 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
   directory,
   operation,
   onAbort,
+  onClearState,
 }) => {
   const openNewSessionDraft = useSessionStore((state) => state.openNewSessionDraft);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -105,6 +107,17 @@ Goal:
   const handleResolveInNewSession = () => {
     // Open new session in the directory with conflicts
     openNewSessionDraft({ directoryOverride: directory });
+    onClearState?.();
+    onOpenChange(false);
+  };
+
+  const handleAbort = () => {
+    onAbort();
+    onOpenChange(false);
+  };
+
+  const handleContinueLater = () => {
+    onClearState?.();
     onOpenChange(false);
   };
 
@@ -153,15 +166,7 @@ Goal:
         toast.error('Failed to send message', { description: message });
       });
 
-    onOpenChange(false);
-  };
-
-  const handleAbort = () => {
-    onAbort();
-    onOpenChange(false);
-  };
-
-  const handleContinueLater = () => {
+    onClearState?.();
     onOpenChange(false);
   };
 
