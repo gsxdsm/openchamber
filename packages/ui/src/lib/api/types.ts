@@ -186,6 +186,19 @@ export interface GitRebaseResult {
   conflictFiles?: string[];
 }
 
+export interface MergeConflictDetails {
+  /** Git status --porcelain output showing current state */
+  statusPorcelain: string;
+  /** List of unmerged file paths */
+  unmergedFiles: string[];
+  /** Git diff output showing current conflict state */
+  diff: string;
+  /** Information about MERGE_HEAD or REBASE_HEAD */
+  headInfo: string;
+  /** The operation type: 'merge' or 'rebase' */
+  operation: 'merge' | 'rebase';
+}
+
 export type GitIdentityAuthType = 'ssh' | 'token';
 
 export interface GitIdentityProfile {
