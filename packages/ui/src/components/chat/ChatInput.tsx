@@ -33,6 +33,7 @@ import { useAssistantStatus } from '@/hooks/useAssistantStatus';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { toast } from '@/components/ui';
 import { useFileStore } from '@/stores/fileStore';
+import { useMessageStore } from '@/stores/messageStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { StopIcon } from '@/components/icons/StopIcon';
@@ -70,6 +71,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsOpen, setMobileControlsOpen] = React.useState(false);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
+    // Message history navigation state (up/down arrow to recall previous messages)
+    const [historyIndex, setHistoryIndex] = React.useState(-1); // -1 = not browsing, 0+ = index from most recent
+    const [draftMessage, setDraftMessage] = React.useState(''); // Preserves input when entering history mode
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const dropZoneRef = React.useRef<HTMLDivElement>(null);
     const mentionRef = React.useRef<FileMentionHandle>(null);
@@ -130,6 +134,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     );
     const consumeDrafts = useInlineCommentDraftStore((state) => state.consumeDrafts);
     const hasDrafts = draftCount > 0;
+
+    // User message history for up/down arrow navigation
+    // Get raw messages from store (stable reference)
+    const sessionMessages = useMessageStore(
+        React.useCallback(
+            (state) => (currentSessionId ? state.messages.get(currentSessionId) : undefined),
+            [currentSessionId]
+        )
+    );
+    // Derive user message history with useMemo to avoid infinite re-renders
+    const userMessageHistory = React.useMemo(() => {
+        if (!sessionMessages) return [];
+        return sessionMessages
+            .filter((m) => m.info.role === 'user')
+            .map((m) => {
+                const textPart = m.parts.find((p) => p.type === 'text');
+                if (textPart && 'text' in textPart) {
+                    return String(textPart.text);
+                }
+                return '';
+            })
+            .filter((text) => text.length > 0)
+            .reverse(); // Most recent first
+    }, [sessionMessages]);
 
     // Session activity for auto-send on idle
     const { phase: sessionPhase } = useCurrentSessionActivity();
@@ -378,6 +406,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             clearQueue(currentSessionId);
         }
         setMessage('');
+        // Reset message history navigation state
+        setHistoryIndex(-1);
+        setDraftMessage('');
         if (attachedFiles.length > 0) {
             clearAttachedFiles();
         }
@@ -581,6 +612,52 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (e.key === 'Tab' && !showCommandAutocomplete && !showAgentAutocomplete && !showFileMention) {
             e.preventDefault();
             handleCycleAgent();
+            return;
+        }
+
+        // Handle ArrowUp/ArrowDown for message history navigation
+        // ArrowUp: only when cursor at start (position 0) or input is empty
+        // ArrowDown: also works when cursor at end (to cycle forward through history)
+        const isAnyAutocompleteOpen = showCommandAutocomplete || showAgentAutocomplete || showSkillAutocomplete || showFileMention;
+        const cursorAtStart = textareaRef.current?.selectionStart === 0 && textareaRef.current?.selectionEnd === 0;
+        const cursorAtEnd = textareaRef.current?.selectionStart === message.length && textareaRef.current?.selectionEnd === message.length;
+        const canNavigateHistoryUp = !isAnyAutocompleteOpen && (message.length === 0 || cursorAtStart);
+        const canNavigateHistoryDown = !isAnyAutocompleteOpen && (message.length === 0 || cursorAtEnd);
+
+        if (e.key === 'ArrowUp' && canNavigateHistoryUp && userMessageHistory.length > 0) {
+            e.preventDefault();
+            if (historyIndex === -1) {
+                // Entering history mode - save current input as draft
+                setDraftMessage(message);
+                setHistoryIndex(0);
+                setMessage(userMessageHistory[0]);
+            } else if (historyIndex < userMessageHistory.length - 1) {
+                // Navigate to older message
+                const newIndex = historyIndex + 1;
+                setHistoryIndex(newIndex);
+                setMessage(userMessageHistory[newIndex]);
+            }
+            // Move cursor to start after history navigation
+            requestAnimationFrame(() => {
+                textareaRef.current?.setSelectionRange(0, 0);
+            });
+            // If at oldest message, do nothing
+            return;
+        }
+
+        if (e.key === 'ArrowDown' && canNavigateHistoryDown && historyIndex >= 0) {
+            e.preventDefault();
+            if (historyIndex === 0) {
+                // Exit history mode - clear to empty input
+                setHistoryIndex(-1);
+                setMessage('');
+                setDraftMessage('');
+            } else {
+                // Navigate to newer message
+                const newIndex = historyIndex - 1;
+                setHistoryIndex(newIndex);
+                setMessage(userMessageHistory[newIndex]);
+            }
             return;
         }
 
