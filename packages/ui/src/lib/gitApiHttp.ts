@@ -21,6 +21,7 @@ import type {
   GitIdentityProfile,
   GitIdentitySummary,
   DiscoveredGitCredential,
+  MergeConflictDetails,
 } from './api/types';
 
 declare global {
@@ -648,6 +649,14 @@ export async function stashPop(directory: string): Promise<{ success: boolean }>
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to pop stash');
+  }
+  return response.json();
+}
+
+export async function getConflictDetails(directory: string): Promise<MergeConflictDetails> {
+  const response = await fetch(buildUrl(`${API_BASE}/conflict-details`, directory));
+  if (!response.ok) {
+    throw new Error(`Failed to get conflict details: ${response.statusText}`);
   }
   return response.json();
 }

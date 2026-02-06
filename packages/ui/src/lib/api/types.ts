@@ -335,6 +335,7 @@ export interface GitAPI {
   abortMerge(directory: string): Promise<{ success: boolean }>;
   stash(directory: string, options?: { message?: string; includeUntracked?: boolean }): Promise<{ success: boolean }>;
   stashPop(directory: string): Promise<{ success: boolean }>;
+  getConflictDetails(directory: string): Promise<MergeConflictDetails>;
 }
 
 export interface FileListEntry {

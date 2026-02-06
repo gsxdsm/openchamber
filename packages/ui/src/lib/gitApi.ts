@@ -24,6 +24,7 @@ export type {
   GitRemote,
   GitMergeResult,
   GitRebaseResult,
+  MergeConflictDetails,
 } from './api/types';
 
 declare global {
@@ -315,4 +316,10 @@ export async function stashPop(directory: string): Promise<{ success: boolean }>
   const runtime = getRuntimeGit();
   if (runtime) return runtime.stashPop(directory);
   return gitHttp.stashPop(directory);
+}
+
+export async function getConflictDetails(directory: string): Promise<import('./api/types').MergeConflictDetails> {
+  const runtime = getRuntimeGit();
+  if (runtime?.getConflictDetails) return runtime.getConflictDetails(directory);
+  return gitHttp.getConflictDetails(directory);
 }
