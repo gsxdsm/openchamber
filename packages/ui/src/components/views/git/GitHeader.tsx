@@ -24,9 +24,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { BranchSelector } from './BranchSelector';
 import { WorktreeBranchDisplay } from './WorktreeBranchDisplay';
 import { SyncActions } from './SyncActions';
+import { BranchIntegrationSection } from './BranchIntegrationSection';
 import type { GitStatus, GitIdentityProfile, GitRemote } from '@/lib/api/types';
 
 type SyncAction = 'fetch' | 'pull' | 'push' | null;
+type BranchOperation = 'merge' | 'rebase' | null;
 
 interface GitHeaderProps {
   status: GitStatus | null;
@@ -46,6 +48,11 @@ interface GitHeaderProps {
   onSelectIdentity: (profile: GitIdentityProfile) => void;
   isApplyingIdentity: boolean;
   isWorktreeMode: boolean;
+  // Branch integration (merge/rebase)
+  onMerge: (branch: string) => void;
+  onRebase: (branch: string) => void;
+  branchOperation: BranchOperation;
+  isBusy: boolean;
   onOpenBranchPicker?: () => void;
 }
 
@@ -199,6 +206,10 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
   onSelectIdentity,
   isApplyingIdentity,
   isWorktreeMode,
+  onMerge,
+  onRebase,
+  branchOperation,
+  isBusy,
   onOpenBranchPicker,
 }) => {
   if (!status) {
@@ -254,6 +265,18 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
         onPull={onPull}
         onPush={onPush}
         disabled={!status}
+      />
+
+      <div className="h-4 w-px bg-border/60" />
+
+      <BranchIntegrationSection
+        currentBranch={status?.current}
+        localBranches={localBranches}
+        remoteBranches={remoteBranches}
+        onMerge={onMerge}
+        onRebase={onRebase}
+        disabled={isBusy}
+        isOperating={branchOperation !== null}
       />
 
       <div className="flex-1" />

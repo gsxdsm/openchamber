@@ -1452,3 +1452,35 @@ export async function abortMerge(directory: string): Promise<{ success: boolean 
   const result = await execGit(['merge', '--abort'], directory);
   return { success: result.exitCode === 0 };
 }
+
+// ============== Stash Operations ==============
+
+/**
+ * Stash changes
+ */
+export async function stash(
+  directory: string,
+  options?: { message?: string; includeUntracked?: boolean }
+): Promise<{ success: boolean }> {
+  const args = ['stash', 'push'];
+
+  // Include untracked files by default
+  if (options?.includeUntracked !== false) {
+    args.push('--include-untracked');
+  }
+
+  if (options?.message) {
+    args.push('-m', options.message);
+  }
+
+  const result = await execGit(args, directory);
+  return { success: result.exitCode === 0 };
+}
+
+/**
+ * Pop the most recent stash
+ */
+export async function stashPop(directory: string): Promise<{ success: boolean }> {
+  const result = await execGit(['stash', 'pop'], directory);
+  return { success: result.exitCode === 0 };
+}

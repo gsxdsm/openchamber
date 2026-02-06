@@ -301,3 +301,18 @@ export async function abortMerge(directory: string): Promise<{ success: boolean 
   if (runtime) return runtime.abortMerge(directory);
   return gitHttp.abortMerge(directory);
 }
+
+export async function stash(
+  directory: string,
+  options?: { message?: string; includeUntracked?: boolean }
+): Promise<{ success: boolean }> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.stash(directory, options);
+  return gitHttp.stash(directory, options);
+}
+
+export async function stashPop(directory: string): Promise<{ success: boolean }> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.stashPop(directory);
+  return gitHttp.stashPop(directory);
+}

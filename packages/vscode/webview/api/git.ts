@@ -249,4 +249,18 @@ export const createVSCodeGitAPI = (): GitAPI => ({
   abortMerge: async (directory: string): Promise<{ success: boolean }> => {
     return sendBridgeMessage<{ success: boolean }>('api:git/merge/abort', { directory });
   },
+
+  stash: async (
+    directory: string,
+    options?: { message?: string; includeUntracked?: boolean }
+  ): Promise<{ success: boolean }> => {
+    return sendBridgeMessage<{ success: boolean }>('api:git/stash', {
+      directory,
+      ...options,
+    });
+  },
+
+  stashPop: async (directory: string): Promise<{ success: boolean }> => {
+    return sendBridgeMessage<{ success: boolean }>('api:git/stash/pop', { directory });
+  },
 });

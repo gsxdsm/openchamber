@@ -43,8 +43,8 @@ import { ChangesSection } from './git/ChangesSection';
 import { CommitSection } from './git/CommitSection';
 import { HistorySection } from './git/HistorySection';
 import { PullRequestSection } from './git/PullRequestSection';
-import { BranchIntegrationSection } from './git/BranchIntegrationSection';
 import { ConflictDialog } from './git/ConflictDialog';
+import { StashDialog } from './git/StashDialog';
 import type { GitRemote } from '@/lib/gitApi';
 import { BranchPickerDialog } from '@/components/session/BranchPickerDialog';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -366,6 +366,9 @@ export const GitView: React.FC = () => {
   const [conflictDialogOpen, setConflictDialogOpen] = React.useState(false);
   const [conflictFiles, setConflictFiles] = React.useState<string[]>([]);
   const [conflictOperation, setConflictOperation] = React.useState<'merge' | 'rebase'>('merge');
+  const [stashDialogOpen, setStashDialogOpen] = React.useState(false);
+  const [stashDialogOperation, setStashDialogOperation] = React.useState<'merge' | 'rebase'>('merge');
+  const [stashDialogBranch, setStashDialogBranch] = React.useState('');
 
   const handleCopyCommitHash = React.useCallback((hash: string) => {
     navigator.clipboard
@@ -1034,6 +1037,18 @@ export const GitView: React.FC = () => {
     [currentDirectory, setLogMaxCount, fetchLog, git]
   );
 
+  const isUncommittedChangesError = React.useCallback((error: unknown): boolean => {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    return (
+      message.includes('uncommitted changes') ||
+      message.includes('local changes') ||
+      message.includes('your local changes would be overwritten') ||
+      message.includes('please commit your changes or stash them') ||
+      message.includes('cannot rebase: you have unstaged changes') ||
+      message.includes('error: cannot pull with rebase')
+    );
+  }, []);
+
   const handleMerge = React.useCallback(
     async (branch: string) => {
       if (!currentDirectory) return;
@@ -1054,13 +1069,19 @@ export const GitView: React.FC = () => {
           await refreshLog();
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : `Failed to merge ${branch}`;
-        toast.error(message);
+        if (isUncommittedChangesError(err)) {
+          setStashDialogOperation('merge');
+          setStashDialogBranch(branch);
+          setStashDialogOpen(true);
+        } else {
+          const message = err instanceof Error ? err.message : `Failed to merge ${branch}`;
+          toast.error(message);
+        }
       } finally {
         setBranchOperation(null);
       }
     },
-    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog]
+    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError]
   );
 
   const handleRebase = React.useCallback(
@@ -1083,13 +1104,19 @@ export const GitView: React.FC = () => {
           await refreshLog();
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : `Failed to rebase onto ${branch}`;
-        toast.error(message);
+        if (isUncommittedChangesError(err)) {
+          setStashDialogOperation('rebase');
+          setStashDialogBranch(branch);
+          setStashDialogOpen(true);
+        } else {
+          const message = err instanceof Error ? err.message : `Failed to rebase onto ${branch}`;
+          toast.error(message);
+        }
       } finally {
         setBranchOperation(null);
       }
     },
-    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog]
+    [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, isUncommittedChangesError]
   );
 
   const handleAbortConflict = React.useCallback(async () => {
@@ -1110,6 +1137,79 @@ export const GitView: React.FC = () => {
       toast.error(message);
     }
   }, [currentDirectory, git, conflictOperation, refreshStatusAndBranches, refreshLog]);
+
+  const handleStashAndRetry = React.useCallback(
+    async (restoreAfter: boolean) => {
+      if (!currentDirectory) return;
+
+      const currentBranch = status?.current;
+      const operation = stashDialogOperation;
+      const branch = stashDialogBranch;
+
+      // Stash changes
+      await git.stash(currentDirectory, {
+        message: `Auto-stash before ${operation} with ${branch}`,
+        includeUntracked: true,
+      });
+
+      let operationSucceeded = false;
+      let hasConflict = false;
+
+      try {
+        // Perform the operation
+        if (operation === 'merge') {
+          const result = await git.merge(currentDirectory, { branch });
+          if (result.conflict) {
+            hasConflict = true;
+            setConflictFiles(result.conflictFiles ?? []);
+            setConflictOperation('merge');
+            setConflictDialogOpen(true);
+          } else {
+            operationSucceeded = true;
+            toast.success(`Merged ${branch} into ${currentBranch}`);
+          }
+        } else {
+          const result = await git.rebase(currentDirectory, { onto: branch });
+          if (result.conflict) {
+            hasConflict = true;
+            setConflictFiles(result.conflictFiles ?? []);
+            setConflictOperation('rebase');
+            setConflictDialogOpen(true);
+          } else {
+            operationSucceeded = true;
+            toast.success(`Rebased ${currentBranch} onto ${branch}`);
+          }
+        }
+
+        // Restore stashed changes if requested and operation succeeded
+        if (restoreAfter && operationSucceeded) {
+          try {
+            await git.stashPop(currentDirectory);
+            toast.success('Stashed changes restored');
+          } catch (popErr) {
+            const popMessage = popErr instanceof Error ? popErr.message : 'Failed to restore stashed changes';
+            toast.error(popMessage);
+          }
+        } else if (restoreAfter && hasConflict) {
+          toast.info('Stashed changes will need to be restored manually after resolving conflicts');
+        }
+
+        await refreshStatusAndBranches();
+        await refreshLog();
+      } catch (err) {
+        // If the operation failed (not due to conflicts), try to restore stash
+        if (restoreAfter) {
+          try {
+            await git.stashPop(currentDirectory);
+          } catch {
+            // Ignore stash pop errors in this case
+          }
+        }
+        throw err;
+      }
+    },
+    [currentDirectory, git, status, stashDialogOperation, stashDialogBranch, refreshStatusAndBranches, refreshLog]
+  );
 
   if (!currentDirectory) {
     return (
@@ -1166,6 +1266,10 @@ export const GitView: React.FC = () => {
         onSelectIdentity={handleApplyIdentity}
         isApplyingIdentity={isSettingIdentity}
         isWorktreeMode={!!worktreeMetadata}
+        onMerge={handleMerge}
+        onRebase={handleRebase}
+        branchOperation={branchOperation}
+        isBusy={isBusy}
         onOpenBranchPicker={branchPickerProject ? () => setIsBranchPickerOpen(true) : undefined}
       />
 
@@ -1322,6 +1426,14 @@ export const GitView: React.FC = () => {
           onAbort={handleAbortConflict}
         />
       )}
+
+      <StashDialog
+        open={stashDialogOpen}
+        onOpenChange={setStashDialogOpen}
+        operation={stashDialogOperation}
+        targetBranch={stashDialogBranch}
+        onConfirm={handleStashAndRetry}
+      />
 
       <BranchPickerDialog
         open={isBranchPickerOpen}

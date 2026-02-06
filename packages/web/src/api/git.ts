@@ -43,4 +43,6 @@ export const createWebGitAPI = (): GitAPI => ({
   abortRebase: gitApiHttp.abortRebase,
   merge: gitApiHttp.merge,
   abortMerge: gitApiHttp.abortMerge,
+  stash: gitApiHttp.stash,
+  stashPop: gitApiHttp.stashPop,
 });

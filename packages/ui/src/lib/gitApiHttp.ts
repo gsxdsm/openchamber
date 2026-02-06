@@ -624,3 +624,30 @@ export async function abortMerge(directory: string): Promise<{ success: boolean 
   }
   return response.json();
 }
+
+export async function stash(
+  directory: string,
+  options?: { message?: string; includeUntracked?: boolean }
+): Promise<{ success: boolean }> {
+  const response = await fetch(buildUrl(`${API_BASE}/stash`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to stash');
+  }
+  return response.json();
+}
+
+export async function stashPop(directory: string): Promise<{ success: boolean }> {
+  const response = await fetch(buildUrl(`${API_BASE}/stash/pop`, directory), {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to pop stash');
+  }
+  return response.json();
+}

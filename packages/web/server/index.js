@@ -7372,6 +7372,38 @@ Context:
     }
   });
 
+  app.post('/api/git/stash', async (req, res) => {
+    const { stash } = await getGitLibraries();
+    try {
+      const directory = req.query.directory;
+      if (!directory) {
+        return res.status(400).json({ error: 'directory parameter is required' });
+      }
+
+      const result = await stash(directory, req.body);
+      res.json(result);
+    } catch (error) {
+      console.error('Failed to stash:', error);
+      res.status(500).json({ error: error.message || 'Failed to stash' });
+    }
+  });
+
+  app.post('/api/git/stash/pop', async (req, res) => {
+    const { stashPop } = await getGitLibraries();
+    try {
+      const directory = req.query.directory;
+      if (!directory) {
+        return res.status(400).json({ error: 'directory parameter is required' });
+      }
+
+      const result = await stashPop(directory);
+      res.json(result);
+    } catch (error) {
+      console.error('Failed to pop stash:', error);
+      res.status(500).json({ error: error.message || 'Failed to pop stash' });
+    }
+  });
+
   app.post('/api/git/commit', async (req, res) => {
     const { commit } = await getGitLibraries();
     try {

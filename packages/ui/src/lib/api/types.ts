@@ -320,6 +320,8 @@ export interface GitAPI {
   abortRebase(directory: string): Promise<{ success: boolean }>;
   merge(directory: string, options: { branch: string }): Promise<GitMergeResult>;
   abortMerge(directory: string): Promise<{ success: boolean }>;
+  stash(directory: string, options?: { message?: string; includeUntracked?: boolean }): Promise<{ success: boolean }>;
+  stashPop(directory: string): Promise<{ success: boolean }>;
 }
 
 export interface FileListEntry {

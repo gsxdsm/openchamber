@@ -1314,3 +1314,40 @@ export async function abortMerge(directory) {
     throw error;
   }
 }
+
+// ============== Stash Operations ==============
+
+export async function stash(directory, options = {}) {
+  const git = await createGit(directory);
+
+  try {
+    const args = ['stash', 'push'];
+    
+    // Include untracked files by default
+    if (options.includeUntracked !== false) {
+      args.push('--include-untracked');
+    }
+    
+    if (options.message) {
+      args.push('-m', options.message);
+    }
+
+    await git.raw(args);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to stash:', error);
+    throw error;
+  }
+}
+
+export async function stashPop(directory) {
+  const git = await createGit(directory);
+
+  try {
+    await git.raw(['stash', 'pop']);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to pop stash:', error);
+    throw error;
+  }
+}
