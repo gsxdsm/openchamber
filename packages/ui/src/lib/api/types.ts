@@ -168,6 +168,24 @@ export interface GitPullResult {
   deletions: number;
 }
 
+export interface GitRemote {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
+export interface GitMergeResult {
+  success: boolean;
+  conflict?: boolean;
+  conflictFiles?: string[];
+}
+
+export interface GitRebaseResult {
+  success: boolean;
+  conflict?: boolean;
+  conflictFiles?: string[];
+}
+
 export type GitIdentityAuthType = 'ssh' | 'token';
 
 export interface GitIdentityProfile {
@@ -297,6 +315,11 @@ export interface GitAPI {
   discoverGitCredentials?(): Promise<DiscoveredGitCredential[]>;
   getGlobalGitIdentity?(): Promise<GitIdentitySummary | null>;
   getRemoteUrl?(directory: string, remote?: string): Promise<string | null>;
+  getRemotes(directory: string): Promise<GitRemote[]>;
+  rebase(directory: string, options: { onto: string }): Promise<GitRebaseResult>;
+  abortRebase(directory: string): Promise<{ success: boolean }>;
+  merge(directory: string, options: { branch: string }): Promise<GitMergeResult>;
+  abortMerge(directory: string): Promise<{ success: boolean }>;
 }
 
 export interface FileListEntry {

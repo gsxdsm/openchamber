@@ -21,6 +21,9 @@ export type {
   GitDeleteBranchPayload,
   GitDeleteRemoteBranchPayload,
   DiscoveredGitCredential,
+  GitRemote,
+  GitMergeResult,
+  GitRebaseResult,
 } from './api/types';
 
 declare global {
@@ -261,4 +264,40 @@ export async function getRemoteUrl(directory: string, remote?: string): Promise<
   const runtime = getRuntimeGit();
   if (runtime?.getRemoteUrl) return runtime.getRemoteUrl(directory, remote);
   return gitHttp.getRemoteUrl(directory, remote);
+}
+
+export async function getRemotes(directory: string): Promise<import('./api/types').GitRemote[]> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.getRemotes(directory);
+  return gitHttp.getRemotes(directory);
+}
+
+export async function rebase(
+  directory: string,
+  options: { onto: string }
+): Promise<import('./api/types').GitRebaseResult> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.rebase(directory, options);
+  return gitHttp.rebase(directory, options);
+}
+
+export async function abortRebase(directory: string): Promise<{ success: boolean }> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.abortRebase(directory);
+  return gitHttp.abortRebase(directory);
+}
+
+export async function merge(
+  directory: string,
+  options: { branch: string }
+): Promise<import('./api/types').GitMergeResult> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.merge(directory, options);
+  return gitHttp.merge(directory, options);
+}
+
+export async function abortMerge(directory: string): Promise<{ success: boolean }> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.abortMerge(directory);
+  return gitHttp.abortMerge(directory);
 }
