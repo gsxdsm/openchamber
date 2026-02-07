@@ -14,21 +14,26 @@ const gpgconfCandidates = ['gpgconf', '/opt/homebrew/bin/gpgconf', '/usr/local/b
  * Handles Windows/Unix differences and prevents command injection.
  */
 function escapeSshKeyPath(sshKeyPath) {
+  const isWindows = process.platform === 'win32';
+  
+  // Normalize path first on Windows (convert backslashes to forward slashes)
+  let normalizedPath = sshKeyPath;
+  if (isWindows) {
+    normalizedPath = sshKeyPath.replace(/\\/g, '/');
+  }
+  
   // Validate: reject paths with characters that could enable injection
   // Allow only alphanumeric, path separators, dots, dashes, underscores, spaces, and colons (for Windows drives)
-  const dangerousChars = /[`$\\!"';&|<>(){}[\]*?#~]/;
-  if (dangerousChars.test(sshKeyPath)) {
+  // Note: backslash is not in this list since we've already normalized Windows paths
+  const dangerousChars = /[`$!"';&|<>(){}[\]*?#~]/;
+  if (dangerousChars.test(normalizedPath)) {
     throw new Error(`SSH key path contains invalid characters: ${sshKeyPath}`);
   }
 
-  const isWindows = process.platform === 'win32';
-  
   if (isWindows) {
     // On Windows, Git (via MSYS/MinGW) expects Unix-style paths
-    // Convert backslashes to forward slashes and handle drive letters
-    let unixPath = sshKeyPath.replace(/\\/g, '/');
-    
     // Convert "C:/path" to "/c/path" for MSYS compatibility
+    let unixPath = normalizedPath;
     const driveMatch = unixPath.match(/^([A-Za-z]):\//);
     if (driveMatch) {
       unixPath = `/${driveMatch[1].toLowerCase()}${unixPath.slice(2)}`;
@@ -39,7 +44,7 @@ function escapeSshKeyPath(sshKeyPath) {
   } else {
     // On Unix, use single quotes and escape any single quotes in the path
     // Single quotes prevent all shell interpretation except for single quotes themselves
-    const escaped = sshKeyPath.replace(/'/g, "'\\''");
+    const escaped = normalizedPath.replace(/'/g, "'\\''");
     return `'${escaped}'`;
   }
 }

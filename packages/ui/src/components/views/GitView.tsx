@@ -1259,6 +1259,16 @@ export const GitView: React.FC = () => {
     }
   }, [currentDirectory, git, conflictOperation, refreshStatusAndBranches, refreshLog, clearConflictState]);
 
+  // Check if there are unresolved conflicts (files with 'U' status)
+  const hasUnresolvedConflicts = React.useMemo(() => {
+    if (!status?.files) return false;
+    return status.files.some((f) => 
+      (f.index === 'U' || f.working_dir === 'U') ||
+      (f.index === 'A' && f.working_dir === 'A') ||
+      (f.index === 'D' && f.working_dir === 'D')
+    );
+  }, [status?.files]);
+
   const handleContinueOperation = React.useCallback(async () => {
     if (!currentDirectory) return;
 
@@ -1329,10 +1339,6 @@ export const GitView: React.FC = () => {
     }
   }, [conflictFiles]);
 
-  const hasUnresolvedConflicts = React.useMemo(() => {
-    return conflictFiles.length > 0;
-  }, [conflictFiles]);
-
   const handleStashAndRetry = React.useCallback(
     async (restoreAfter: boolean) => {
       if (!currentDirectory) return;
@@ -1342,10 +1348,16 @@ export const GitView: React.FC = () => {
       const branch = stashDialogBranch;
 
       // Stash changes
-      await git.stash(currentDirectory, {
-        message: `Auto-stash before ${operation} with ${branch}`,
-        includeUntracked: true,
-      });
+      try {
+        await git.stash(currentDirectory, {
+          message: `Auto-stash before ${operation} with ${branch}`,
+          includeUntracked: true,
+        });
+      } catch (stashErr) {
+        const msg = stashErr instanceof Error ? stashErr.message : 'Failed to stash changes';
+        toast.error(msg);
+        return;
+      }
 
       let operationSucceeded = false;
       let hasConflict = false;
