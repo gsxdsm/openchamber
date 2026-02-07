@@ -1331,11 +1331,24 @@ export const GitView: React.FC = () => {
   }, [currentDirectory, git, status, refreshStatusAndBranches, refreshLog, clearConflictState]);
 
   const handleResolveWithAIFromBanner = React.useCallback(() => {
-    // Open the conflict dialog which has AI resolution capabilities
-    if (conflictFiles.length > 0) {
-      setConflictDialogOpen(true);
+    if (!currentDirectory) return;
+
+    // Determine operation type from status
+    const isMerge = !!status?.mergeInProgress?.head;
+    const operation = isMerge ? 'merge' : 'rebase';
+
+    // Get conflict files from status (files with 'U' status indicate unmerged/conflicted)
+    const filesWithConflicts = status?.files
+      ?.filter((f) => f.index === 'U' || f.working_dir === 'U')
+      .map((f) => f.path) ?? [];
+
+    // Update conflict state and open dialog
+    if (filesWithConflicts.length > 0) {
+      setConflictFiles(filesWithConflicts);
     }
-  }, [conflictFiles]);
+    setConflictOperation(operation);
+    setConflictDialogOpen(true);
+  }, [currentDirectory, status]);
 
   const handleStashAndRetry = React.useCallback(
     async (restoreAfter: boolean) => {
