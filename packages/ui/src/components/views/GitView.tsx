@@ -49,7 +49,6 @@ import { StashDialog } from './git/StashDialog';
 import { InProgressOperationBanner } from './git/InProgressOperationBanner';
 import type { OperationLogEntry } from './git/BranchIntegrationSection';
 import type { GitRemote } from '@/lib/gitApi';
-import * as gitApi from '@/lib/gitApi';
 import { BranchPickerDialog } from '@/components/session/BranchPickerDialog';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 
@@ -1262,7 +1261,7 @@ export const GitView: React.FC = () => {
   // Check if there are unresolved conflicts (files with 'U' status)
   const hasUnresolvedConflicts = React.useMemo(() => {
     if (!status?.files) return false;
-    return status.files.some((f) => 
+    return status.files.some((f) =>
       (f.index === 'U' || f.working_dir === 'U') ||
       (f.index === 'A' && f.working_dir === 'A') ||
       (f.index === 'D' && f.working_dir === 'D')
