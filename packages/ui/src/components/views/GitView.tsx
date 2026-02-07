@@ -36,7 +36,6 @@ import {
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useUIStore } from '@/stores/useUIStore';
 import { IntegrateCommitsSection } from './git/IntegrateCommitsSection';
-import { BranchIntegrationSection } from './git/BranchIntegrationSection';
 
 import { GitHeader } from './git/GitHeader';
 import { GitEmptyState } from './git/GitEmptyState';
@@ -1565,16 +1564,6 @@ export const GitView: React.FC = () => {
               }}
             />
           ) : null}
-
-          <BranchIntegrationSection
-            currentBranch={status?.current}
-            localBranches={localBranches}
-            remoteBranches={remoteBranches}
-            onMerge={handleMerge}
-            onRebase={handleRebase}
-            disabled={isBusy}
-            isOperating={branchOperation !== null}
-          />
 
           {currentDirectory && status?.current && status?.tracking ? (
             <PullRequestSection

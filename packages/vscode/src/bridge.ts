@@ -2501,11 +2501,7 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
 
       case 'api:git/ignore-openchamber': {
         // LEGACY_WORKTREES: only needed for <project>/.openchamber era. Safe to remove after legacy support dropped.
-        const { directory } = (payload || {}) as { directory?: string };
-        if (!directory) {
-          return { id, type, success: false, error: 'Directory is required' };
-        }
-        await gitService.ensureOpenChamberIgnored(directory);
+        // This is now a no-op since the function was removed with legacy worktree support.
         return { id, type, success: true, data: { success: true } };
       }
 
