@@ -2372,7 +2372,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                   {group.label}
                 </p>
                 {!group.isMain && isBranchDifferentFromLabel(group.branch, group.label) ? (
-                  <span className="text-[12px] text-muted-foreground truncate typography-ui-label leading-tight">
+                  <span className="text-[10px] sm:text-[11px] text-muted-foreground/80 truncate leading-tight">
                     {group.branch}
                   </span>
                 ) : null}
