@@ -2293,7 +2293,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       return (
         <div className="oc-group">
           <div
-            className="group/gh flex items-center justify-between gap-2 py-1 min-h-8 min-w-0 rounded-sm hover:bg-interactive-hover/50 cursor-pointer"
+            className="group/gh flex items-start justify-between gap-2 py-1 min-w-0 rounded-sm hover:bg-interactive-hover/50 cursor-pointer"
             onMouseEnter={() => {
               if (!group.isMain) {
                 void ensureWorktreePrLoaded(groupKey, group.directory, group.label, group.worktree);
@@ -2334,11 +2334,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             }}
             aria-label={isCollapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
           >
-            <div className="min-w-0 flex items-center gap-1.5 px-0">
+            <div className="min-w-0 flex items-start gap-1.5 px-0 pt-0.5">
               {isCollapsed ? (
-                <RiArrowRightSLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <RiArrowRightSLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground mt-1" />
               ) : (
-                <RiArrowDownSLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <RiArrowDownSLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground mt-1" />
               )}
               {!group.isMain || isGitProject ? (
                 !group.isMain && groupPr?.url ? (
@@ -2352,7 +2352,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                             void openExternal(groupPr.url);
                           }
                         }}
-                        className="inline-flex h-4 w-4 items-center justify-center rounded-sm hover:bg-interactive-hover/50"
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-sm hover:bg-interactive-hover/50 mt-1"
                         style={{ color: prColorVar }}
                         aria-label={getPrTooltipLabel(groupPrStatus)}
                       >
@@ -2364,7 +2364,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 ) : (
-                  <RiGitBranchLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground self-start mt-0.5" />
+                  <RiGitBranchLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground mt-1" />
                 )
               ) : null}
               <div className="min-w-0 flex flex-col">
