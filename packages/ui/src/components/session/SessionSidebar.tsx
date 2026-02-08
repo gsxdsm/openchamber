@@ -68,6 +68,7 @@ import { checkIsGitRepository } from '@/lib/gitApi';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { createWorktreeOnly, createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
+import { useGitStore } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -684,6 +685,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const { github, git } = useRuntimeAPIs();
 
   const settingsAutoCreateWorktree = useConfigStore((state) => state.settingsAutoCreateWorktree);
+
+  const gitDirectories = useGitStore((state) => state.directories);
 
   const sessions = useSessionStore((state) => state.sessions);
   const sessionsByDirectory = useSessionStore((state) => state.sessionsByDirectory);
@@ -1381,6 +1384,16 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }>;
   }, [projects]);
 
+  // Compute a dependency that changes when any project's git branch changes
+  const projectGitBranchesKey = React.useMemo(() => {
+    return normalizedProjects
+      .map((project) => {
+        const dirState = gitDirectories.get(project.normalizedPath);
+        return `${project.id}:${dirState?.status?.current ?? ''}`;
+      })
+      .join('|');
+  }, [normalizedProjects, gitDirectories]);
+
   React.useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -1407,7 +1420,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [normalizedProjects]);
+  }, [normalizedProjects, projectGitBranchesKey]);
 
   const getSessionsForProject = React.useCallback(
     (project: { normalizedPath: string }) => {
