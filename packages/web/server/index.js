@@ -6326,9 +6326,6 @@ async function main(options = {}) {
       if (!sourceRemote && remote !== 'origin') {
         sourceRemote = 'origin';
       }
-      
-      console.log('[PR Create] Input:', { remote, headRemote, sourceRemote, head, base });
-      console.log('[PR Create] Target repo (from remote "%s"):', remote, repo);
 
       // For fork workflows: we need to determine the correct head reference
       let headRef = head;
@@ -6336,18 +6333,13 @@ async function main(options = {}) {
       if (sourceRemote && sourceRemote !== remote) {
         // The branch is on a different remote than the target - this is a cross-repo PR
         const { repo: headRepo } = await resolveGitHubRepoFromDirectory(directory, sourceRemote);
-        console.log('[PR Create] Head repo (from sourceRemote "%s"):', sourceRemote, headRepo);
         if (headRepo) {
           // Always use owner:branch format for cross-repo PRs
           // GitHub API requires this when head is from a different repo/fork
           if (headRepo.owner !== repo.owner || headRepo.repo !== repo.repo) {
             headRef = `${headRepo.owner}:${head}`;
-            console.log('[PR Create] Cross-repo detected, headRef:', headRef);
           }
         }
-      } else if (sourceRemote === remote) {
-        // Same remote - this is a same-repo PR, just use the branch name
-        console.log('[PR Create] Same-repo PR (source remote == target remote)');
       }
 
       // For cross-repo PRs, verify the branch exists on the head repo first
@@ -6357,8 +6349,6 @@ async function main(options = {}) {
           ? (await resolveGitHubRepoFromDirectory(directory, sourceRemote)).repo?.repo 
           : repo.repo;
         
-        console.log('[PR Create] Checking branch exists:', { headOwner, headRepoName, branch: head });
-        
         if (headRepoName) {
           try {
             await octokit.rest.repos.getBranch({
@@ -6366,26 +6356,16 @@ async function main(options = {}) {
               repo: headRepoName,
               branch: head,
             });
-            console.log('[PR Create] Branch check passed');
           } catch (branchError) {
-            console.log('[PR Create] Branch check error:', branchError?.status, branchError?.message);
             if (branchError?.status === 404) {
               return res.status(400).json({
                 error: `Branch "${head}" not found on ${headOwner}/${headRepoName}. Please push your branch first: git push ${sourceRemote || 'origin'} ${head}`,
               });
             }
-            // For other errors, log and continue - let the PR create attempt handle it
+            // For other errors, continue - let the PR create attempt handle it
           }
         }
       }
-
-      console.log('[PR Create] Final API call:', {
-        owner: repo.owner,
-        repo: repo.repo,
-        title,
-        head: headRef,
-        base,
-      });
 
       const created = await octokit.rest.pulls.create({
         owner: repo.owner,
