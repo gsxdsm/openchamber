@@ -6079,12 +6079,29 @@ async function main(options = {}) {
         return res.json({ connected: true, repo: null, branch, pr: null, checks: null, canMerge: false });
       }
 
-       // Determine if we're looking at a fork scenario (where origin differs from the target remote)
-       let forkOwner = null;
-       if (remote !== 'origin') {
+       // Determine the head owner for PR search
+       // Priority: 1) tracking branch remote, 2) origin (if different from target), 3) target repo owner
+       let headOwnerForSearch = null;
+       
+       // First, check the branch's tracking info to see which remote it's on
+       const { getStatus } = await import('./lib/git-service.js');
+       const status = await getStatus(directory).catch(() => null);
+       if (status?.tracking) {
+         const trackingRemote = status.tracking.split('/')[0];
+         if (trackingRemote && trackingRemote !== remote) {
+           // Branch is tracked on a different remote - get that remote's owner
+           const { repo: trackingRepo } = await resolveGitHubRepoFromDirectory(directory, trackingRemote);
+           if (trackingRepo && trackingRepo.owner !== repo.owner) {
+             headOwnerForSearch = trackingRepo.owner;
+           }
+         }
+       }
+       
+       // Fallback: if targeting non-origin, check if origin has a different owner (fork scenario)
+       if (!headOwnerForSearch && remote !== 'origin') {
          const { repo: originRepo } = await resolveGitHubRepoFromDirectory(directory, 'origin');
          if (originRepo && originRepo.owner !== repo.owner) {
-           forkOwner = originRepo.owner;
+           headOwnerForSearch = originRepo.owner;
          }
        }
 
@@ -6115,16 +6132,16 @@ async function main(options = {}) {
        // PR status by branch:
        // - Prefer open PRs.
        // - If none, also surface closed/merged PRs.
-       // - For fork PRs: first try with fork owner, then fall back to target owner, then ref match.
+       // - For cross-repo PRs: first try with head owner, then fall back to target owner, then ref match.
        let first = null;
        
-       // For fork workflows, try fork owner first
-       if (forkOwner) {
-         first = await listByHead('open', forkOwner);
-         if (!first) first = await listByHead('closed', forkOwner);
+       // For cross-repo workflows, try head owner first
+       if (headOwnerForSearch) {
+         first = await listByHead('open', headOwnerForSearch);
+         if (!first) first = await listByHead('closed', headOwnerForSearch);
        }
        
-       // Try with target repo owner
+       // Try with target repo owner (same-repo PRs)
        if (!first) first = await listByHead('open');
        if (!first) first = await listByHead('closed');
        
@@ -6288,21 +6305,49 @@ async function main(options = {}) {
         return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
       }
 
-      // For fork workflows: we need to determine the correct head reference
-      // If headRemote is specified, use that to get the head owner
-      // Otherwise, try 'origin' as the default source of the branch
-      let headRef = head;
-      const sourceRemote = headRemote || (remote !== 'origin' ? 'origin' : '');
+      // Determine the source remote for the head branch
+      // Priority: 1) explicit headRemote, 2) tracking branch remote, 3) 'origin' if targeting non-origin
+      let sourceRemote = headRemote;
       
-      if (sourceRemote) {
+      // If no explicit headRemote, check the branch's tracking info
+      if (!sourceRemote) {
+        const { getStatus } = await import('./lib/git-service.js');
+        const status = await getStatus(directory).catch(() => null);
+        if (status?.tracking) {
+          // tracking is like "gsxdsm/fix/multi-remote-branch-creation" or "origin/main"
+          const trackingRemote = status.tracking.split('/')[0];
+          if (trackingRemote) {
+            sourceRemote = trackingRemote;
+          }
+        }
+      }
+      
+      // Fallback: if targeting non-origin and no tracking info, try 'origin'
+      if (!sourceRemote && remote !== 'origin') {
+        sourceRemote = 'origin';
+      }
+      
+      console.log('[PR Create] Input:', { remote, headRemote, sourceRemote, head, base });
+      console.log('[PR Create] Target repo (from remote "%s"):', remote, repo);
+
+      // For fork workflows: we need to determine the correct head reference
+      let headRef = head;
+      
+      if (sourceRemote && sourceRemote !== remote) {
+        // The branch is on a different remote than the target - this is a cross-repo PR
         const { repo: headRepo } = await resolveGitHubRepoFromDirectory(directory, sourceRemote);
+        console.log('[PR Create] Head repo (from sourceRemote "%s"):', sourceRemote, headRepo);
         if (headRepo) {
           // Always use owner:branch format for cross-repo PRs
           // GitHub API requires this when head is from a different repo/fork
           if (headRepo.owner !== repo.owner || headRepo.repo !== repo.repo) {
             headRef = `${headRepo.owner}:${head}`;
+            console.log('[PR Create] Cross-repo detected, headRef:', headRef);
           }
         }
+      } else if (sourceRemote === remote) {
+        // Same remote - this is a same-repo PR, just use the branch name
+        console.log('[PR Create] Same-repo PR (source remote == target remote)');
       }
 
       // For cross-repo PRs, verify the branch exists on the head repo first
@@ -6312,6 +6357,8 @@ async function main(options = {}) {
           ? (await resolveGitHubRepoFromDirectory(directory, sourceRemote)).repo?.repo 
           : repo.repo;
         
+        console.log('[PR Create] Checking branch exists:', { headOwner, headRepoName, branch: head });
+        
         if (headRepoName) {
           try {
             await octokit.rest.repos.getBranch({
@@ -6319,17 +6366,26 @@ async function main(options = {}) {
               repo: headRepoName,
               branch: head,
             });
+            console.log('[PR Create] Branch check passed');
           } catch (branchError) {
+            console.log('[PR Create] Branch check error:', branchError?.status, branchError?.message);
             if (branchError?.status === 404) {
               return res.status(400).json({
                 error: `Branch "${head}" not found on ${headOwner}/${headRepoName}. Please push your branch first: git push ${sourceRemote || 'origin'} ${head}`,
               });
             }
             // For other errors, log and continue - let the PR create attempt handle it
-            console.log('[PR Create Debug] Branch check failed (non-404):', branchError?.message);
           }
         }
       }
+
+      console.log('[PR Create] Final API call:', {
+        owner: repo.owner,
+        repo: repo.repo,
+        title,
+        head: headRef,
+        base,
+      });
 
       const created = await octokit.rest.pulls.create({
         owner: repo.owner,

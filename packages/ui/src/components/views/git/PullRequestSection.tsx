@@ -985,10 +985,8 @@ export const PullRequestSection: React.FC<{
 
     setIsCreating(true);
     try {
-      // Use selectedRemote as target, and 'origin' as head source for fork workflows
-      const originRemote = remotes.find((r) => r.name === 'origin');
-      const isTargetingNonOrigin = selectedRemote && selectedRemote.name !== 'origin';
-      
+      // Let the server determine the head source from tracking info
+      // The server will check the branch's tracking remote and use that
       const pr = await github.prCreate({
         directory,
         title: trimmedTitle,
@@ -997,8 +995,6 @@ export const PullRequestSection: React.FC<{
         ...(body.trim() ? { body } : {}),
         draft,
         ...(selectedRemote ? { remote: selectedRemote.name } : {}),
-        // For fork workflows: if targeting non-origin remote, use origin as head source
-        ...(isTargetingNonOrigin && originRemote ? { headRemote: originRemote.name } : {}),
       });
       toast.success('PR created');
       setStatus((prev) => (prev ? { ...prev, pr } : prev));
@@ -1009,7 +1005,7 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsCreating(false);
     }
-  }, [baseBranch, body, branch, directory, draft, github, refresh, remotes, selectedRemote, title]);
+  }, [baseBranch, body, branch, directory, draft, github, refresh, selectedRemote, title]);
 
   const mergePr = React.useCallback(async (pr: GitHubPullRequest) => {
     if (!github?.prMerge) {
