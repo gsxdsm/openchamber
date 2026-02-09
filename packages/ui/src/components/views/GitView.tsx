@@ -844,9 +844,10 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
     }
   }, [currentDirectory, selectedPaths, git, settingsGitmojiEnabled, gitmojiEmojis, scrollActionPanelToBottom]);
 
-  const handleCreateBranch = async (branchName: string) => {
+  const handleCreateBranch = async (branchName: string, remote?: GitRemote) => {
     if (!currentDirectory || !status) return;
     const checkoutBase = status.current ?? null;
+    const remoteName = remote?.name ?? 'origin';
 
     try {
       await git.createBranch(currentDirectory, branchName, checkoutBase ?? 'HEAD');
@@ -856,7 +857,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       try {
         await git.checkoutBranch(currentDirectory, branchName);
         await git.gitPush(currentDirectory, {
-          remote: 'origin',
+          remote: remoteName,
           branch: branchName,
           options: ['--set-upstream'],
         });
@@ -865,7 +866,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
         const message =
           pushError instanceof Error
             ? pushError.message
-            : 'Unable to push new branch to origin.';
+            : `Unable to push new branch to ${remoteName}.`;
         toast.warning('Branch created locally', {
           description: (
             <span className="text-foreground/80 dark:text-foreground/70">
@@ -887,7 +888,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       await refreshLog();
 
       if (pushSucceeded) {
-        toast.success(`Upstream set for ${branchName}`);
+        toast.success(`Upstream set for ${branchName} on ${remoteName}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create branch';
