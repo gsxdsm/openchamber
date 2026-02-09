@@ -409,6 +409,8 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
   const [conflictDialogOpen, setConflictDialogOpen] = React.useState(false);
   const [conflictFiles, setConflictFiles] = React.useState<string[]>([]);
   const [conflictOperation, setConflictOperation] = React.useState<'merge' | 'rebase'>('merge');
+  const [pushRemoteDialogOpen, setPushRemoteDialogOpen] = React.useState(false);
+  const [pendingPushAction, setPendingPushAction] = React.useState<'commitAndPush' | null>(null);
 
   // Conflict state persistence key
   const conflictStorageKey = React.useMemo(() => {
@@ -756,7 +758,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
     }
   };
 
-  const handleCommit = async (options: { pushAfter?: boolean } = {}) => {
+  const handleCommit = async (options: { pushAfter?: boolean; remote?: GitRemote } = {}) => {
     if (!currentDirectory) return;
     if (!commitMessage.trim()) {
       toast.error('Please enter a commit message');
@@ -766,6 +768,13 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
     const filesToCommit = Array.from(selectedPaths).sort();
     if (filesToCommit.length === 0) {
       toast.error('Select at least one file to commit');
+      return;
+    }
+
+    // If pushing with multiple remotes and no remote specified, show selection dialog
+    if (options.pushAfter && remotes.length > 1 && !options.remote) {
+      setPendingPushAction('commitAndPush');
+      setPushRemoteDialogOpen(true);
       return;
     }
 
@@ -785,8 +794,9 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       await refreshStatusAndBranches();
 
       if (options.pushAfter) {
-        await git.gitPush(currentDirectory);
-        toast.success('Pushed to remote');
+        const remoteName = options.remote?.name;
+        await git.gitPush(currentDirectory, remoteName ? { remote: remoteName } : undefined);
+        toast.success(remoteName ? `Pushed to ${remoteName}` : 'Pushed to remote');
         triggerFireworks();
         await refreshStatusAndBranches(false);
       } else {
@@ -801,6 +811,19 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
     } finally {
       setCommitAction(null);
     }
+  };
+
+  const handlePushRemoteSelect = (remote: GitRemote) => {
+    setPushRemoteDialogOpen(false);
+    if (pendingPushAction === 'commitAndPush') {
+      handleCommit({ pushAfter: true, remote });
+    }
+    setPendingPushAction(null);
+  };
+
+  const handlePushRemoteDialogClose = () => {
+    setPushRemoteDialogOpen(false);
+    setPendingPushAction(null);
   };
 
   const handleGenerateCommitMessage = React.useCallback(async () => {
@@ -853,9 +876,11 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       await git.createBranch(currentDirectory, branchName, checkoutBase ?? 'HEAD');
       toast.success(`Created branch ${branchName}`);
 
+      // Checkout the new branch and stay on it
+      await git.checkoutBranch(currentDirectory, branchName);
+
       let pushSucceeded = false;
       try {
-        await git.checkoutBranch(currentDirectory, branchName);
         await git.gitPush(currentDirectory, {
           remote: remoteName,
           branch: branchName,
@@ -874,14 +899,6 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
             </span>
           ),
         });
-      } finally {
-        if (checkoutBase) {
-          try {
-            await git.checkoutBranch(currentDirectory, checkoutBase);
-          } catch (restoreError) {
-            console.warn('Failed to restore original branch after creation:', restoreError);
-          }
-        }
       }
 
       await refreshStatusAndBranches();
@@ -1859,6 +1876,34 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
         onOpenChange={setIsBranchPickerOpen}
         project={branchPickerProject}
       />
+
+      <Dialog open={pushRemoteDialogOpen} onOpenChange={handlePushRemoteDialogClose}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select remote</DialogTitle>
+            <DialogDescription>
+              Choose which remote to push to
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {remotes.map((remote) => (
+              <button
+                key={remote.name}
+                type="button"
+                onClick={() => handlePushRemoteSelect(remote)}
+                className="flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg text-left border border-border/60 hover:bg-accent hover:border-border transition-colors"
+              >
+                <span className="typography-ui-label text-foreground font-medium">
+                  {remote.name}
+                </span>
+                <span className="typography-meta text-muted-foreground truncate max-w-full">
+                  {remote.pushUrl}
+                </span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
