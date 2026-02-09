@@ -4,7 +4,7 @@ import { devtools } from "zustand/middleware";
 import type { Session, Message, Part } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest, PermissionResponse } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
-import type { SessionStore, AttachedFile, EditPermissionMode } from "./types/sessionTypes";
+import type { SessionStore, AttachedFile, EditPermissionMode, SyntheticContextPart } from "./types/sessionTypes";
 import { getActiveSessionWindow, getMemoryLimits } from "./types/sessionTypes";
 
 import { useSessionStore as useSessionManagementStore } from "./sessionStore";
@@ -98,9 +98,12 @@ export const useSessionStore = create<SessionStore>()(
             sessionAgentEditModes: new Map(),
             abortPromptSessionId: null,
             abortPromptExpiresAt: null,
-            sessionActivityPhase: new Map(),
+            sessionStatus: new Map(),
+            sessionAttentionStates: new Map(),
             userSummaryTitles: new Map(),
             pendingInputText: null,
+            pendingInputMode: 'replace',
+            pendingSyntheticParts: null,
             newSessionDraft: { open: true, directoryOverride: null, parentID: null },
 
                 getSessionAgentEditMode: (sessionId: string, agentName: string | undefined, defaultMode?: EditPermissionMode) => {
@@ -133,9 +136,13 @@ export const useSessionStore = create<SessionStore>()(
                             directoryOverride: directory,
                             parentID: options?.parentID ?? null,
                             title: options?.title,
+                            initialPrompt: options?.initialPrompt,
+                            syntheticParts: options?.syntheticParts,
                         },
                         currentSessionId: null,
                         error: null,
+                        // Set pending input text if initialPrompt is provided
+                        ...(options?.initialPrompt ? { pendingInputText: options.initialPrompt, pendingInputMode: 'replace' as const } : {}),
                     });
 
                     try {
@@ -167,7 +174,7 @@ export const useSessionStore = create<SessionStore>()(
                 closeNewSessionDraft: () => {
                     const realCurrentSessionId = useSessionManagementStore.getState().currentSessionId;
                     set({
-                        newSessionDraft: { open: false, directoryOverride: null, parentID: null, title: undefined },
+                        newSessionDraft: { open: false, directoryOverride: null, parentID: null, title: undefined, initialPrompt: undefined, syntheticParts: undefined },
                         currentSessionId: realCurrentSessionId,
                     });
                 },
@@ -311,23 +318,15 @@ export const useSessionStore = create<SessionStore>()(
                     get().evictLeastRecentlyUsed();
                 },
                 loadMessages: (sessionId: string, limit?: number) => useMessageStore.getState().loadMessages(sessionId, limit),
-                sendMessage: async (content: string, providerID: string, modelID: string, agent?: string, attachments?: AttachedFile[], agentMentionName?: string, additionalParts?: Array<{ text: string; attachments?: AttachedFile[] }>, variant?: string) => {
+                sendMessage: async (content: string, providerID: string, modelID: string, agent?: string, attachments?: AttachedFile[], agentMentionName?: string, additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>, variant?: string) => {
                     const draft = get().newSessionDraft;
                     const trimmedAgent = typeof agent === 'string' && agent.trim().length > 0 ? agent.trim() : undefined;
 
-                    const setBusyPhase = (sessionId: string) => {
+                    const setStatus = (sessionId: string, type: 'idle' | 'busy') => {
                         set((state) => {
-                            const next = new Map(state.sessionActivityPhase ?? new Map());
-                            next.set(sessionId, 'busy');
-                            return { sessionActivityPhase: next };
-                        });
-                    };
-
-                    const setIdlePhase = (sessionId: string) => {
-                        set((state) => {
-                            const next = new Map(state.sessionActivityPhase ?? new Map());
-                            next.set(sessionId, 'idle');
-                            return { sessionActivityPhase: next };
+                            const next = new Map(state.sessionStatus ?? new Map());
+                            next.set(sessionId, { type });
+                            return { sessionStatus: next };
                         });
                     };
 
@@ -390,15 +389,23 @@ export const useSessionStore = create<SessionStore>()(
                             // ignored
                         }
 
+                        // Capture synthetic parts before clearing draft
+                        const draftSyntheticParts = draft.syntheticParts;
+
                         get().closeNewSessionDraft();
-                        setBusyPhase(created.id);
+                        setStatus(created.id, 'busy');
+
+                        // Merge draft synthetic parts with any additional parts passed to sendMessage
+                        const mergedAdditionalParts = draftSyntheticParts?.length
+                            ? [...(additionalParts || []), ...draftSyntheticParts]
+                            : additionalParts;
 
                         try {
                             return await useMessageStore
                                 .getState()
-                                .sendMessage(content, providerID, modelID, effectiveDraftAgent, created.id, attachments, agentMentionName, additionalParts, variant);
+                                .sendMessage(content, providerID, modelID, effectiveDraftAgent, created.id, attachments, agentMentionName, mergedAdditionalParts, variant);
                         } catch (error) {
-                            setIdlePhase(created.id);
+                            setStatus(created.id, 'idle');
                             throw error;
                         }
                     }
@@ -429,14 +436,34 @@ export const useSessionStore = create<SessionStore>()(
                     }
  
                     if (currentSessionId) {
-                        setBusyPhase(currentSessionId);
+                        setStatus(currentSessionId, 'busy');
+
+                        const memoryState = get().sessionMemoryState.get(currentSessionId);
+                        if (!memoryState || !memoryState.lastUserMessageAt) {
+                            const currentMemoryState = get().sessionMemoryState;
+                            const newMemoryState = new Map(currentMemoryState);
+                            newMemoryState.set(currentSessionId, {
+                                viewportAnchor: memoryState?.viewportAnchor ?? 0,
+                                isStreaming: memoryState?.isStreaming ?? false,
+                                lastAccessedAt: Date.now(),
+                                backgroundMessageCount: memoryState?.backgroundMessageCount ?? 0,
+                                lastUserMessageAt: Date.now(),
+                            });
+                            set({ sessionMemoryState: newMemoryState });
+                        }
+                    }
+
+                    // Notify server that user sent a message in this session
+                    if (currentSessionId) {
+                        fetch(`/api/sessions/${currentSessionId}/message-sent`, { method: 'POST' })
+                            .catch(() => { /* ignore */ });
                     }
 
                     try {
                         return await useMessageStore.getState().sendMessage(content, providerID, modelID, effectiveAgent, currentSessionId || undefined, attachments, agentMentionName, additionalParts, variant);
                     } catch (error) {
                         if (currentSessionId) {
-                            setIdlePhase(currentSessionId);
+                            setStatus(currentSessionId, 'idle');
                         }
                         throw error;
                     }
@@ -504,9 +531,9 @@ export const useSessionStore = create<SessionStore>()(
                 updateViewportAnchor: (sessionId: string, anchor: number) => useMessageStore.getState().updateViewportAnchor(sessionId, anchor),
                 trimToViewportWindow: (sessionId: string, targetSize?: number) => {
                     const currentSessionId = useSessionManagementStore.getState().currentSessionId;
-                    // Skip trimming for sessions in active phase (busy/cooldown)
-                    const phase = get().sessionActivityPhase?.get(sessionId);
-                    if (phase === 'busy' || phase === 'cooldown') {
+                    // Skip trimming while session is working (busy/retry)
+                    const status = get().sessionStatus?.get(sessionId);
+                    if (status?.type === 'busy' || status?.type === 'retry') {
                         return;
                     }
                     return useMessageStore.getState().trimToViewportWindow(sessionId, targetSize, currentSessionId || undefined);
@@ -615,7 +642,7 @@ export const useSessionStore = create<SessionStore>()(
 
                     // Set pending input text for ChatInput to consume
                     if (messageText) {
-                        set({ pendingInputText: messageText });
+                        set({ pendingInputText: messageText, pendingInputMode: 'replace' });
                     }
                 },
 
@@ -737,7 +764,7 @@ export const useSessionStore = create<SessionStore>()(
 
                         // 4. Show fork point as pending input (will populate ChatInput)
                         if (inputText) {
-                            set({ pendingInputText: inputText });
+                            set({ pendingInputText: inputText, pendingInputMode: 'replace' });
                         }
 
                         // Load the new session's messages
@@ -752,16 +779,32 @@ export const useSessionStore = create<SessionStore>()(
                     }
                 },
 
-                setPendingInputText: (text: string | null) => {
-                    set({ pendingInputText: text });
+                setPendingInputText: (text: string | null, mode: 'replace' | 'append' = 'replace') => {
+                    set({ pendingInputText: text, pendingInputMode: mode });
                 },
 
                 consumePendingInputText: () => {
                     const text = get().pendingInputText;
+                    const mode = get().pendingInputMode;
                     if (text !== null) {
-                        set({ pendingInputText: null });
+                        set({ pendingInputText: null, pendingInputMode: 'replace' });
                     }
-                    return text;
+                    if (text === null) {
+                        return null;
+                    }
+                    return { text, mode };
+                },
+
+                setPendingSyntheticParts: (parts: SyntheticContextPart[] | null) => {
+                    set({ pendingSyntheticParts: parts });
+                },
+
+                consumePendingSyntheticParts: () => {
+                    const parts = get().pendingSyntheticParts;
+                    if (parts !== null) {
+                        set({ pendingSyntheticParts: null });
+                    }
+                    return parts;
                 },
             }),
         {

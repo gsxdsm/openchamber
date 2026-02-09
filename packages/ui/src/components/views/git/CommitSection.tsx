@@ -4,6 +4,7 @@ import {
   RiAiGenerate2,
   RiLoader4Line,
   RiEmotionHappyLine,
+  RiArrowDownSLine,
 } from '@remixicon/react';
 import {
   Collapsible,
@@ -15,6 +16,13 @@ import { CommitInput } from './CommitInput';
 import { AIHighlightsBox } from './AIHighlightsBox';
 import { useDeviceInfo } from '@/lib/device';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import type { GitRemote } from '@/lib/api/types';
 
 type CommitAction = 'commit' | 'commitAndPush' | null;
 
@@ -28,11 +36,13 @@ interface CommitSectionProps {
   onGenerateMessage: () => void;
   isGeneratingMessage: boolean;
   onCommit: () => void;
-  onCommitAndPush: () => void;
+  onCommitAndPush: (remote?: GitRemote) => void;
   commitAction: CommitAction;
   isBusy: boolean;
   gitmojiEnabled: boolean;
   onOpenGitmojiPicker: () => void;
+  remotes?: GitRemote[];
+  variant?: 'framed' | 'plain';
 }
 
 export const CommitSection: React.FC<CommitSectionProps> = ({
@@ -50,18 +60,34 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
   isBusy,
   gitmojiEnabled,
   onOpenGitmojiPicker,
+  remotes = [],
+  variant = 'framed',
 }) => {
   const hasSelectedFiles = selectedCount > 0;
   const canCommit = commitMessage.trim() && hasSelectedFiles && commitAction === null;
   const { isMobile } = useDeviceInfo();
+  const hasMultipleRemotes = remotes.length > 1;
+
+  const containerClassName =
+    variant === 'framed'
+      ? 'rounded-xl border border-border/60 bg-background/70 overflow-hidden'
+      : 'border-0 bg-transparent rounded-none';
+  const headerClassName =
+    variant === 'framed'
+      ? 'flex w-full items-center justify-between px-3 py-2'
+      : 'flex w-full items-center justify-between px-4 py-3 border-b border-border/40';
+  const contentClassName =
+    variant === 'framed'
+      ? 'flex flex-col gap-3 p-3 pt-0'
+      : 'flex flex-col gap-3 px-4 py-3';
 
   return (
     <Collapsible
-      open={hasSelectedFiles}
-      className="rounded-xl border border-border/60 bg-background/70 overflow-hidden"
+      open={variant === 'plain' ? true : hasSelectedFiles}
+      className={containerClassName}
       data-keyboard-avoid="true"
     >
-      <div className="flex w-full items-center justify-between px-3 py-2">
+      <div className={headerClassName}>
         <h3 className="typography-ui-header font-semibold text-foreground">Commit</h3>
         <span className="typography-meta text-muted-foreground">
           {hasSelectedFiles
@@ -71,7 +97,13 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
       </div>
 
       <CollapsibleContent>
-        <div className="flex flex-col gap-3 p-3 pt-0">
+        <div className={contentClassName}>
+          {!hasSelectedFiles ? (
+            <p className="typography-meta text-muted-foreground">
+              Select files in Changes to enable commit.
+            </p>
+          ) : null}
+
           <AIHighlightsBox
             highlights={generatedHighlights}
             onInsert={onInsertHighlights}
@@ -144,31 +176,113 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
             </ButtonLarge>
 
             {isMobile ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
+              hasMultipleRemotes ? (
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={!canCommit || isGeneratingMessage}
+                          className="h-7 gap-0.5 px-1.5"
+                          aria-label="Commit & Push"
+                        >
+                          {commitAction === 'commitAndPush' ? (
+                            <RiLoader4Line className="size-4 animate-spin" />
+                          ) : (
+                            <>
+                              <RiArrowUpLine className="size-4" />
+                              <RiArrowDownSLine className="size-3 opacity-60" />
+                            </>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Commit & Push</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end" className="min-w-[200px]">
+                    {remotes.map((remote) => (
+                      <DropdownMenuItem key={remote.name} onSelect={() => onCommitAndPush(remote)}>
+                        <div className="flex flex-col">
+                          <span className="typography-ui-label text-foreground">
+                            {remote.name}
+                          </span>
+                          <span className="typography-meta text-muted-foreground truncate">
+                            {remote.pushUrl}
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => onCommitAndPush()}
+                      disabled={!canCommit || isGeneratingMessage}
+                      className="h-7 w-7 p-0"
+                      aria-label="Commit & Push"
+                    >
+                      {commitAction === 'commitAndPush' ? (
+                        <RiLoader4Line className="size-4 animate-spin" />
+                      ) : (
+                        <RiArrowUpLine className="size-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>Commit & Push</p>
+                  </TooltipContent>
+                </Tooltip>
+              )
+            ) : hasMultipleRemotes ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <ButtonLarge
                     variant="default"
-                    size="sm"
-                    onClick={onCommitAndPush}
                     disabled={!canCommit || isGeneratingMessage}
-                    className="h-7 w-7 p-0"
+                    className="commit-actions__btn"
                     aria-label="Commit & Push"
                   >
                     {commitAction === 'commitAndPush' ? (
-                      <RiLoader4Line className="size-4 animate-spin" />
+                      <>
+                        <RiLoader4Line className="size-4 animate-spin" />
+                        <span className="commit-actions__label commit-actions__label--long">Pushing...</span>
+                      </>
                     ) : (
-                      <RiArrowUpLine className="size-4" />
+                      <>
+                        <RiArrowUpLine className="size-4" />
+                        <span className="commit-actions__label commit-actions__label--long">Commit &amp; Push</span>
+                        <RiArrowDownSLine className="size-3.5 opacity-60 -mr-0.5" />
+                      </>
                     )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Commit & Push</p>
-                </TooltipContent>
-              </Tooltip>
+                  </ButtonLarge>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[200px]">
+                  {remotes.map((remote) => (
+                    <DropdownMenuItem key={remote.name} onSelect={() => onCommitAndPush(remote)}>
+                      <div className="flex flex-col">
+                        <span className="typography-ui-label text-foreground">
+                          {remote.name}
+                        </span>
+                        <span className="typography-meta text-muted-foreground truncate">
+                          {remote.pushUrl}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <ButtonLarge
                 variant="default"
-                onClick={onCommitAndPush}
+                onClick={() => onCommitAndPush()}
                 disabled={!canCommit || isGeneratingMessage}
                 className="commit-actions__btn"
                 aria-label="Commit & Push"
