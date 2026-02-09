@@ -1769,6 +1769,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
                     directory={pullRequestProps.directory}
                     branch={pullRequestProps.branch}
                     baseBranch={baseBranch}
+                    remotes={remotes}
                     onGeneratedDescription={scrollActionPanelToBottom}
                   />
                 ) : (

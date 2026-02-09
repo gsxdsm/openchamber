@@ -53,6 +53,7 @@ import type {
   GitHubCheckRun,
   GitHubPullRequestContextResult,
   GitHubPullRequestStatus,
+  GitRemote,
 } from '@/lib/api/types';
 
 type MergeMethod = 'merge' | 'squash' | 'rebase';
@@ -167,9 +168,10 @@ export const PullRequestSection: React.FC<{
   directory: string;
   branch: string;
   baseBranch: string;
+  remotes?: GitRemote[];
   variant?: 'framed' | 'plain';
   onGeneratedDescription?: () => void;
-}> = ({ directory, branch, baseBranch, variant = 'framed', onGeneratedDescription }) => {
+}> = ({ directory, branch, baseBranch, remotes = [], variant = 'framed', onGeneratedDescription }) => {
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -217,6 +219,16 @@ export const PullRequestSection: React.FC<{
 
   const [isContextOpen, setIsContextOpen] = React.useState(false);
   const [isContextSheetOpen, setIsContextSheetOpen] = React.useState(false);
+  const [selectedRemote, setSelectedRemote] = React.useState<GitRemote | null>(() => remotes[0] ?? null);
+
+  const hasMultipleRemotes = remotes.length > 1;
+
+  // Update selected remote when remotes change
+  React.useEffect(() => {
+    if (remotes.length > 0 && !selectedRemote) {
+      setSelectedRemote(remotes[0]);
+    }
+  }, [remotes, selectedRemote]);
 
   const [checksDialogOpen, setChecksDialogOpen] = React.useState(false);
   const [checkDetails, setCheckDetails] = React.useState<GitHubPullRequestContextResult | null>(null);
@@ -958,6 +970,7 @@ export const PullRequestSection: React.FC<{
         base: baseBranch,
         ...(body.trim() ? { body } : {}),
         draft,
+        ...(selectedRemote ? { remote: selectedRemote.name } : {}),
       });
       toast.success('PR created');
       setStatus((prev) => (prev ? { ...prev, pr } : prev));
@@ -968,7 +981,7 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsCreating(false);
     }
-  }, [baseBranch, body, branch, directory, draft, github, refresh, title]);
+  }, [baseBranch, body, branch, directory, draft, github, refresh, selectedRemote, title]);
 
   const mergePr = React.useCallback(async (pr: GitHubPullRequest) => {
     if (!github?.prMerge) {
@@ -1457,6 +1470,36 @@ export const PullRequestSection: React.FC<{
                   </button>
                   <span className="typography-ui-label text-foreground select-none">Draft</span>
                 </div>
+
+                {/* Remote selector when multiple remotes */}
+                {hasMultipleRemotes && (
+                  <label className="space-y-1">
+                    <div className="typography-micro text-muted-foreground">Remote</div>
+                    <Select
+                      value={selectedRemote?.name ?? ''}
+                      onValueChange={(value) => {
+                        const remote = remotes.find((r) => r.name === value);
+                        if (remote) setSelectedRemote(remote);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select remote" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {remotes.map((remote) => (
+                          <SelectItem key={remote.name} value={remote.name}>
+                            <div className="flex flex-col items-start">
+                              <span>{remote.name}</span>
+                              <span className="typography-micro text-muted-foreground truncate max-w-[200px]">
+                                {remote.pushUrl}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                )}
 
                 {/* Additional Context Section */}
                 {isMobile ? (

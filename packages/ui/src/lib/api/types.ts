@@ -701,6 +701,7 @@ export type GitHubPullRequestCreateInput = {
   base: string;
   body?: string;
   draft?: boolean;
+  remote?: string;
 };
 
 export type GitHubPullRequestUpdateInput = {

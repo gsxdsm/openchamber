@@ -6247,6 +6247,7 @@ async function main(options = {}) {
       const base = typeof req.body?.base === 'string' ? req.body.base.trim() : '';
       const body = typeof req.body?.body === 'string' ? req.body.body : undefined;
       const draft = typeof req.body?.draft === 'boolean' ? req.body.draft : undefined;
+      const remote = typeof req.body?.remote === 'string' ? req.body.remote.trim() : 'origin';
       if (!directory || !title || !head || !base) {
         return res.status(400).json({ error: 'directory, title, head, base are required' });
       }
@@ -6258,7 +6259,7 @@ async function main(options = {}) {
       }
 
       const { resolveGitHubRepoFromDirectory } = await import('./lib/github-repo.js');
-      const { repo } = await resolveGitHubRepoFromDirectory(directory);
+      const { repo } = await resolveGitHubRepoFromDirectory(directory, remote);
       if (!repo) {
         return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
       }
