@@ -10,12 +10,15 @@ import { useEventStream } from '@/hooks/useEventStream';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useMenuActions } from '@/hooks/useMenuActions';
 import { useSessionStatusBootstrap } from '@/hooks/useSessionStatusBootstrap';
+import { useServerSessionStatus } from '@/hooks/useServerSessionStatus';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useRouter } from '@/hooks/useRouter';
 import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
 import { GitPollingProvider } from '@/hooks/useGitPolling';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { hasModifier } from '@/lib/utils';
+import { isDesktopLocalOriginActive, isDesktopShell, isTauriShell } from '@/lib/desktop';
+import { OnboardingScreen } from '@/components/onboarding/OnboardingScreen';
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -25,9 +28,7 @@ import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { OnboardingScreen } from '@/components/onboarding/OnboardingScreen';
 import { VoiceProvider } from '@/components/voice';
-import { isCliAvailable } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import type { RuntimeAPIs } from '@/lib/api/types';
@@ -54,17 +55,13 @@ function App({ apis }: AppProps) {
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
   const { uiFont, monoFont } = useFontPreferences();
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
-  const [isDesktopRuntime, setIsDesktopRuntime] = React.useState<boolean>(() => apis.runtime.isDesktop);
   const [isVSCodeRuntime, setIsVSCodeRuntime] = React.useState<boolean>(() => apis.runtime.isVSCode);
-  const [cliAvailable, setCliAvailable] = React.useState<boolean>(() => {
-    if (!apis.runtime.isDesktop) return true;
-    return isCliAvailable();
-  });
+  const [showCliOnboarding, setShowCliOnboarding] = React.useState(false);
+  const appReadyDispatchedRef = React.useRef(false);
 
   React.useEffect(() => {
-    setIsDesktopRuntime(apis.runtime.isDesktop);
     setIsVSCodeRuntime(apis.runtime.isVSCode);
-  }, [apis.runtime.isDesktop, apis.runtime.isVSCode]);
+  }, [apis.runtime.isVSCode]);
 
   React.useEffect(() => {
     registerRuntimeAPIs(apis);
@@ -162,7 +159,20 @@ function App({ apis }: AppProps) {
     syncDirectoryAndSessions();
   }, [currentDirectory, isSwitchingDirectory, loadSessions, isConnected, isVSCodeRuntime]);
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isInitialized || isSwitchingDirectory) return;
+    if (appReadyDispatchedRef.current) return;
+    appReadyDispatchedRef.current = true;
+    (window as unknown as { __openchamberAppReady?: boolean }).__openchamberAppReady = true;
+    window.dispatchEvent(new Event('openchamber:app-ready'));
+  }, [isInitialized, isSwitchingDirectory]);
+
   useEventStream();
+
+  // Server-authoritative session status polling
+  // Replaces SSE-dependent status updates with reliable HTTP polling
+  useServerSessionStatus();
 
   usePushVisibilityBeacon();
 
@@ -175,6 +185,19 @@ function App({ apis }: AppProps) {
   }, []);
 
   useMenuActions(handleToggleMemoryDebug);
+
+  const settingsAutoCreateWorktree = useConfigStore((state) => state.settingsAutoCreateWorktree);
+  React.useEffect(() => {
+    if (!isTauriShell()) {
+      return;
+    }
+    const tauri = (window as unknown as { __TAURI__?: { core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> } } }).__TAURI__;
+    if (typeof tauri?.core?.invoke !== 'function') {
+      return;
+    }
+
+    void tauri.core.invoke('desktop_set_auto_worktree_menu', { enabled: settingsAutoCreateWorktree });
+  }, [settingsAutoCreateWorktree]);
 
 
 
@@ -200,15 +223,44 @@ function App({ apis }: AppProps) {
     }
   }, [error, clearError]);
 
+  React.useEffect(() => {
+    if (!isDesktopShell() || !isDesktopLocalOriginActive()) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch('/health', { method: 'GET' });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as null | { openCodeRunning?: unknown; lastOpenCodeError?: unknown };
+        if (!data || cancelled) return;
+        const openCodeRunning = data.openCodeRunning === true;
+        const err = typeof data.lastOpenCodeError === 'string' ? data.lastOpenCodeError : '';
+        const cliMissing =
+          !openCodeRunning &&
+          /ENOENT|spawn\s+opencode|Unable\s+to\s+locate\s+the\s+opencode\s+CLI|OpenCode\s+CLI\s+not\s+found|opencode(\.exe)?\s+not\s+found|env:\s*(node|bun):\s*No\s+such\s+file\s+or\s+directory|(node|bun):\s*No\s+such\s+file\s+or\s+directory/i.test(err);
+        setShowCliOnboarding(cliMissing);
+      } catch {
+        // ignore
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleCliAvailable = React.useCallback(() => {
-    setCliAvailable(true);
+    setShowCliOnboarding(false);
     window.location.reload();
   }, []);
 
-  if (isDesktopRuntime && !cliAvailable) {
+  if (showCliOnboarding) {
     return (
       <ErrorBoundary>
-        <div className={`h-full text-foreground bg-transparent`}>
+        <div className="h-full text-foreground bg-transparent">
           <OnboardingScreen onCliAvailable={handleCliAvailable} />
         </div>
       </ErrorBoundary>

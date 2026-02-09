@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.6] - 2026-02-9
+
+- Desktop: redesigned the main workspace with a dedicated Git sidebar and bottom terminal dock, so Git and terminal actions stay in reach while chatting.
+- Desktop: added an `Open In` button to open the current workspace in Finder, Terminal, and supported editors with remembered app preference (thanks to @yulia-ivashko).
+- Header: combined Instance, Usage, and MCP into one services menu for faster access to runtime controls and rate limits while decluttering the header space.
+- Git: added push/pull with remote selection, plus in-app rebase/merge flows with improved remote inference and clearer conflict handling (thanks to @gsxdsm).
+- Git: reorganized the Git workspace with improved in-app PR workflows.
+- Files: improved editing with breadcrumbs, better draft handling, smoother editor interactions, and more reliable directory navigation from file context (thanks to @nelsonPires5).
+- Sessions: improved status behavior, faster mobile session switching with running/unread indicators, and clearer worktree labels when branch name differs (thanks to @Jovines, @gsxdsm).
+- Notifications: added smarter templates with concise summaries, so completion alerts are easier to scan (thanks to @gsxdsm).
+- Usage: added per-model quota breakdowns with collapsible groups, and fixed provider dropdown scrolling (thanks to @nelsonPires5, @gsxdsm).
+- Terminal: improved input responsiveness with a persistent low-latency transport for steadier typing (thanks to @shekohex).
+- Mobile: fixed chat input layout issues on small screens (thanks to @nelsonPires5).
+- Reliability: fixed OpenCode auth pass-through and proxy env handling to reduce intermittent connection/auth issues (thanks to @gsxdsm).
+
+
+## [1.6.5] - 2026-02-6
+
+- Settings: added an OpenCode CLI path override so you can point OpenChamber at a custom/local CLI install.
+- Chat: added arrow-key prompt history and an optional setting to persist input drafts between restarts (thanks to @gsxdsm).
+- Chat: thinking/reasoning blocks now render more consistently, and justification visibility settings now apply reliably (thanks to @gsxdsm).
+- Diff/Plans: added inline comment drafts so you can leave line-level notes and feed them back into requests (thanks to @nelsonPires5).
+- Sessions: you can now rename projects directly from the sidebar, and issue/PR pickers are easier to scan when starting from GitHub context (thanks to @shekohex, @gsxdsm).
+- Worktrees: improved worktree flow reliability, including cleaner handling when a worktree was already removed outside the app (thanks to @gsxdsm).
+- Terminal: improved Android keyboard behavior and removed distracting native caret blink in terminal inputs (thanks to @shekohex).
+- UI: added Vitesse Dark and Vitesse Light theme presets.
+- Reliability: improved OpenCode binary resolution and HOME-path handling across runtimes for steadier local startup.
+
+
+## [1.6.4] - 2026-02-5
+
+- Desktop: switch between local and remote OpenChamber instances, plus a thinner runtime for better feature parity and fewer desktop-only quirks.
+- VSCode: improved Windows PATH resolution and cold-start readiness checks to reduce "stuck loading" for sessions/models/agents.
+- Mobile: split Agent/Model controls and a quick commands button with autocomplete (Commands/Agents/Files) for easier input (thanks to @Jovines, @gsxdsm).
+- Chat: select text in messages to quickly add it to your prompt or start a new session (thanks to @gsxdsm).
+- Diff/Plans: add inline comment drafts so you can annotate specific lines and include those notes in requests (thanks to @nelsonPires5).
+- Terminal/Syntax: font size controls and Phoenix file extension support for better highlighting in files and diffs (thanks to @shekohex).
+- Usage: expanded quota tracking with more providers (including GitHub Copilot) and a provider selector dropdown (thanks to @gsxdsm, @nelsonPires5).
+- Git: improved macOS SSH agent support for smoother private-repo auth (thanks to @shekohex).
+- Web: fixed missing icon when installing the Android PWA (thanks to @nelsonPires5).
+- GitHub: PR description generation supports optional extra context for better summaries (thanks to @nelsonPires5).
+
+
 ## [1.6.3] - 2026-02-2
 
 - Web: improved server readiness check to use the `/global/health` endpoint for more reliable startup detection.

@@ -82,7 +82,7 @@ const DIFF_VIEW_MODE_OPTIONS: Option<'single' | 'stacked'>[] = [
     },
 ];
 
-export type VisibleSetting = 'theme' | 'fontSize' | 'spacing' | 'cornerRadius' | 'inputBarOffset' | 'toolOutput' | 'diffLayout' | 'dotfiles' | 'reasoning' | 'queueMode' | 'textJustificationActivity' | 'terminalQuickKeys';
+export type VisibleSetting = 'theme' | 'fontSize' | 'terminalFontSize' | 'spacing' | 'cornerRadius' | 'inputBarOffset' | 'toolOutput' | 'diffLayout' | 'dotfiles' | 'reasoning' | 'queueMode' | 'textJustificationActivity' | 'terminalQuickKeys' | 'persistDraft';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -100,6 +100,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setToolCallExpansion = useUIStore(state => state.setToolCallExpansion);
     const fontSize = useUIStore(state => state.fontSize);
     const setFontSize = useUIStore(state => state.setFontSize);
+    const terminalFontSize = useUIStore(state => state.terminalFontSize);
+    const setTerminalFontSize = useUIStore(state => state.setTerminalFontSize);
     const padding = useUIStore(state => state.padding);
     const setPadding = useUIStore(state => state.setPadding);
     const cornerRadius = useUIStore(state => state.cornerRadius);
@@ -114,6 +116,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setShowTerminalQuickKeysOnDesktop = useUIStore(state => state.setShowTerminalQuickKeysOnDesktop);
     const queueModeEnabled = useMessageQueueStore(state => state.queueModeEnabled);
     const setQueueMode = useMessageQueueStore(state => state.setQueueMode);
+    const persistChatDraft = useUIStore(state => state.persistChatDraft);
+    const setPersistChatDraft = useUIStore(state => state.setPersistChatDraft);
     const {
         themeMode,
         setThemeMode,
@@ -281,6 +285,78 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             <RiRestartLine className="h-3.5 w-3.5" />
                         </ButtonSmall>
                     </div>
+                </div>
+            )}
+
+            {shouldShow('terminalFontSize') && (
+                <div className="space-y-4">
+                    <div className="space-y-1">
+                        <h3 className="typography-ui-header font-semibold text-foreground">
+                            Terminal Font Size
+                        </h3>
+
+                    </div>
+                    {isMobile ? (
+                        <div className="flex items-center gap-2 w-full">
+                            <input
+                                type="range"
+                                min="9"
+                                max="52"
+                                step="1"
+                                value={terminalFontSize}
+                                onChange={(e) => setTerminalFontSize(Number(e.target.value))}
+                                className="flex-1 min-w-0 h-3 bg-muted rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+                                aria-label="Terminal font size"
+                            />
+
+                            <span className="typography-ui-label font-medium text-foreground tabular-nums rounded-md border border-border bg-background px-2 py-1.5 min-w-[3.75rem] text-center">
+                                {terminalFontSize}px
+                            </span>
+
+                            <ButtonSmall
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setTerminalFontSize(13)}
+                                disabled={terminalFontSize === 13}
+                                className="h-8 w-8 px-0 border border-border bg-background hover:bg-interactive-hover disabled:opacity-100 disabled:bg-background"
+                                aria-label="Reset terminal font size"
+                                title="Reset"
+                            >
+                                <RiRestartLine className="h-3.5 w-3.5" />
+                            </ButtonSmall>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3 w-full max-w-md">
+                            <input
+                                type="range"
+                                min="9"
+                                max="52"
+                                step="1"
+                                value={terminalFontSize}
+                                onChange={(e) => setTerminalFontSize(Number(e.target.value))}
+                                className="flex-1 min-w-0 h-2 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0"
+                            />
+                            <NumberInput
+                                value={terminalFontSize}
+                                onValueChange={setTerminalFontSize}
+                                min={9}
+                                max={52}
+                                step={1}
+                                aria-label="Terminal font size"
+                            />
+                            <ButtonSmall
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setTerminalFontSize(13)}
+                                disabled={terminalFontSize === 13}
+                                className="h-8 w-8 px-0 border border-border bg-background hover:bg-interactive-hover disabled:opacity-100 disabled:bg-background"
+                                aria-label="Reset terminal font size"
+                                title="Reset"
+                            >
+                                <RiRestartLine className="h-3.5 w-3.5" />
+                            </ButtonSmall>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -679,6 +755,23 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                         {queueModeEnabled
                             ? `Enter queues messages, ${getModifierLabel()}+Enter sends immediately.`
                             : `Enter sends immediately, ${getModifierLabel()}+Enter queues messages.`}
+                    </p>
+                </div>
+            )}
+
+            {shouldShow('persistDraft') && (
+                <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                            checked={persistChatDraft}
+                            onChange={setPersistChatDraft}
+                        />
+                        <span className="typography-ui-header font-semibold text-foreground">
+                            Persist chat input draft
+                        </span>
+                    </label>
+                    <p className="typography-meta text-muted-foreground pl-5">
+                        Save your typed message across page reloads and session switches.
                     </p>
                 </div>
             )}

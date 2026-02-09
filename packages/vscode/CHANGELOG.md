@@ -1,3 +1,22 @@
+## [1.6.6] - 2026-02-9
+
+- Usage: added per-model quota groups in the header and fixed provider dropdown scrolling for easier usage tracking (thanks to @nelsonPires5, @gsxdsm).
+- Reliability: fixed OpenCode auth pass-through/proxy behavior to reduce failed extension requests (thanks to @gsxdsm).
+
+## [1.6.5] - 2026-02-6
+
+- Settings: added an OpenCode CLI path override so you can use a custom/local CLI install.
+- Chat: added arrow-key prompt history and an optional setting to persist input drafts between restarts (thanks to @gsxdsm).
+- Chat: thinking/reasoning blocks now render more consistently, and justification visibility settings now apply reliably (thanks to @gsxdsm).
+- Reliability: improved OpenCode binary resolution and HOME-path handling for steadier local startup.
+
+## [1.6.4] - 2026-02-5
+
+- Improved Windows PATH resolution and cold-start readiness checks to reduce "stuck loading" sessions.
+- Usage: expanded quota tracking with more providers (including GitHub Copilot) and a provider selector dropdown (thanks to @gsxdsm, @nelsonPires5).
+- Chat: select text in messages to quickly add it to your prompt or start a new session (thanks to @gsxdsm).
+
+
 ## [1.6.3] - 2026-02-2
 
 - Improved server health check with the proper health API endpoint and increased timeout for steadier startup (thanks to @wienans).

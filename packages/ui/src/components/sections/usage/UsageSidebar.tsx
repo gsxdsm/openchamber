@@ -36,28 +36,20 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
   const isLoading = useQuotaStore((state) => state.isLoading);
   const usageAutoRefresh = useQuotaStore((state) => state.autoRefresh);
   const usageRefreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
+  const usageDisplayMode = useQuotaStore((state) => state.displayMode);
   const setUsageAutoRefresh = useQuotaStore((state) => state.setAutoRefresh);
   const setUsageRefreshInterval = useQuotaStore((state) => state.setRefreshInterval);
+  const setUsageDisplayMode = useQuotaStore((state) => state.setDisplayMode);
   const loadUsageSettings = useQuotaStore((state) => state.loadSettings);
   const { isMobile } = useDeviceInfo();
 
-  const [isDesktopRuntime, setIsDesktopRuntime] = React.useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return typeof window.opencodeDesktop !== 'undefined';
-  });
-
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setIsDesktopRuntime(typeof window.opencodeDesktop !== 'undefined');
-  }, []);
 
   React.useEffect(() => {
     void loadUsageSettings();
   }, [loadUsageSettings]);
 
-  const persistUsageSettings = React.useCallback(async (changes: { usageAutoRefresh?: boolean; usageRefreshIntervalMs?: number }) => {
+  const persistUsageSettings = React.useCallback(async (changes: { usageAutoRefresh?: boolean; usageRefreshIntervalMs?: number; usageDisplayMode?: 'usage' | 'remaining'; usageDropdownProviders?: string[] }) => {
     try {
       await updateDesktopSettings(changes);
     } catch (error) {
@@ -79,11 +71,15 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
     void persistUsageSettings({ usageRefreshIntervalMs: next });
   }, [persistUsageSettings, setUsageRefreshInterval]);
 
-  const bgClass = isDesktopRuntime
-    ? 'bg-transparent'
-    : isVSCode
-      ? 'bg-background'
-      : 'bg-sidebar';
+  const handleUsageDisplayModeChange = React.useCallback((value: string) => {
+    if (value !== 'usage' && value !== 'remaining') {
+      return;
+    }
+    setUsageDisplayMode(value);
+    void persistUsageSettings({ usageDisplayMode: value });
+  }, [persistUsageSettings, setUsageDisplayMode]);
+
+  const bgClass = isVSCode ? 'bg-background' : 'bg-sidebar';
 
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
@@ -134,6 +130,22 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
             </Button>
           </div>
         </div>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="typography-micro text-muted-foreground">Display</span>
+          <Select value={usageDisplayMode} onValueChange={handleUsageDisplayModeChange}>
+            <SelectTrigger size="sm" className="min-w-[140px]">
+              <SelectValue placeholder="Display mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="usage" className="pr-2 [&>span:first-child]:hidden">
+                Usage
+              </SelectItem>
+              <SelectItem value="remaining" className="pr-2 [&>span:first-child]:hidden">
+                Quota remaining
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
@@ -173,11 +185,11 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
                 <span className="typography-ui-label font-normal truncate flex-1 min-w-0 text-foreground">
                   {provider.name}
                 </span>
-                {!configured && (
-                  <span className="typography-micro text-muted-foreground/60 flex-shrink-0">Not set</span>
-                )}
-              </button>
-            </div>
+              {!configured && (
+                <span className="typography-micro text-muted-foreground/60 flex-shrink-0">Not set</span>
+              )}
+            </button>
+          </div>
           );
         })}
       </ScrollableOverlay>

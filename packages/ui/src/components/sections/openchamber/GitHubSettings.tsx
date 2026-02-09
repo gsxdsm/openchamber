@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import type { GitHubAuthStatus } from '@/lib/api/types';
@@ -41,13 +41,12 @@ export const GitHubSettings: React.FC = () => {
       return;
     }
 
-    const desktop = (window as typeof window & { opencodeDesktop?: { openExternal?: (url: string) => Promise<unknown> } }).opencodeDesktop;
-    if (desktop?.openExternal) {
+    type TauriShell = { shell?: { open?: (url: string) => Promise<unknown> } };
+    const tauri = (window as unknown as { __TAURI__?: TauriShell }).__TAURI__;
+    if (tauri?.shell?.open) {
       try {
-        const result = await desktop.openExternal(url);
-        if (result && typeof result === 'object' && 'success' in result && (result as { success?: boolean }).success === true) {
-          return;
-        }
+        await tauri.shell.open(url);
+        return;
       } catch {
         // fall through
       }

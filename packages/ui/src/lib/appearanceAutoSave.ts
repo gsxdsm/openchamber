@@ -8,10 +8,24 @@ type AppearanceSlice = {
   nativeNotificationsEnabled: boolean;
   notificationMode: 'always' | 'hidden-only';
   notifyOnSubtasks: boolean;
+  notifyOnCompletion: boolean;
+  notifyOnError: boolean;
+  notifyOnQuestion: boolean;
+  notificationTemplates: {
+    completion: { title: string; message: string };
+    error: { title: string; message: string };
+    question: { title: string; message: string };
+    subtask: { title: string; message: string };
+  };
+  summarizeLastMessage: boolean;
+  summaryThreshold: number;
+  summaryLength: number;
+  maxLastMessageLength: number;
   autoDeleteEnabled: boolean;
   autoDeleteAfterDays: number;
   toolCallExpansion: 'collapsed' | 'activity' | 'detailed';
   fontSize: number;
+  terminalFontSize: number;
   padding: number;
   cornerRadius: number;
   inputBarOffset: number;
@@ -34,10 +48,19 @@ export const startAppearanceAutoSave = (): void => {
     nativeNotificationsEnabled: useUIStore.getState().nativeNotificationsEnabled,
     notificationMode: useUIStore.getState().notificationMode,
     notifyOnSubtasks: useUIStore.getState().notifyOnSubtasks,
+    notifyOnCompletion: useUIStore.getState().notifyOnCompletion,
+    notifyOnError: useUIStore.getState().notifyOnError,
+    notifyOnQuestion: useUIStore.getState().notifyOnQuestion,
+    notificationTemplates: useUIStore.getState().notificationTemplates,
+    summarizeLastMessage: useUIStore.getState().summarizeLastMessage,
+    summaryThreshold: useUIStore.getState().summaryThreshold,
+    summaryLength: useUIStore.getState().summaryLength,
+    maxLastMessageLength: useUIStore.getState().maxLastMessageLength,
     autoDeleteEnabled: useUIStore.getState().autoDeleteEnabled,
     autoDeleteAfterDays: useUIStore.getState().autoDeleteAfterDays,
     toolCallExpansion: useUIStore.getState().toolCallExpansion,
     fontSize: useUIStore.getState().fontSize,
+    terminalFontSize: useUIStore.getState().terminalFontSize,
     padding: useUIStore.getState().padding,
     cornerRadius: useUIStore.getState().cornerRadius,
     inputBarOffset: useUIStore.getState().inputBarOffset,
@@ -72,10 +95,19 @@ export const startAppearanceAutoSave = (): void => {
       nativeNotificationsEnabled: state.nativeNotificationsEnabled,
       notificationMode: state.notificationMode,
       notifyOnSubtasks: state.notifyOnSubtasks,
+      notifyOnCompletion: state.notifyOnCompletion,
+      notifyOnError: state.notifyOnError,
+      notifyOnQuestion: state.notifyOnQuestion,
+      notificationTemplates: state.notificationTemplates,
+      summarizeLastMessage: state.summarizeLastMessage,
+      summaryThreshold: state.summaryThreshold,
+      summaryLength: state.summaryLength,
+      maxLastMessageLength: state.maxLastMessageLength,
       autoDeleteEnabled: state.autoDeleteEnabled,
       autoDeleteAfterDays: state.autoDeleteAfterDays,
       toolCallExpansion: state.toolCallExpansion,
       fontSize: state.fontSize,
+      terminalFontSize: state.terminalFontSize,
       padding: state.padding,
       cornerRadius: state.cornerRadius,
       inputBarOffset: state.inputBarOffset,
@@ -100,6 +132,30 @@ export const startAppearanceAutoSave = (): void => {
     if (current.notifyOnSubtasks !== previous.notifyOnSubtasks) {
       diff.notifyOnSubtasks = current.notifyOnSubtasks;
     }
+    if (current.notifyOnCompletion !== previous.notifyOnCompletion) {
+      diff.notifyOnCompletion = current.notifyOnCompletion;
+    }
+    if (current.notifyOnError !== previous.notifyOnError) {
+      diff.notifyOnError = current.notifyOnError;
+    }
+    if (current.notifyOnQuestion !== previous.notifyOnQuestion) {
+      diff.notifyOnQuestion = current.notifyOnQuestion;
+    }
+    if (JSON.stringify(current.notificationTemplates) !== JSON.stringify(previous.notificationTemplates)) {
+      diff.notificationTemplates = current.notificationTemplates;
+    }
+    if (current.summarizeLastMessage !== previous.summarizeLastMessage) {
+      diff.summarizeLastMessage = current.summarizeLastMessage;
+    }
+    if (current.summaryThreshold !== previous.summaryThreshold) {
+      diff.summaryThreshold = current.summaryThreshold;
+    }
+    if (current.summaryLength !== previous.summaryLength) {
+      diff.summaryLength = current.summaryLength;
+    }
+    if (current.maxLastMessageLength !== previous.maxLastMessageLength) {
+      diff.maxLastMessageLength = current.maxLastMessageLength;
+    }
     if (current.autoDeleteEnabled !== previous.autoDeleteEnabled) {
       diff.autoDeleteEnabled = current.autoDeleteEnabled;
     }
@@ -111,6 +167,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.fontSize !== previous.fontSize) {
       diff.fontSize = current.fontSize;
+    }
+    if (current.terminalFontSize !== previous.terminalFontSize) {
+      diff.terminalFontSize = current.terminalFontSize;
     }
     if (current.padding !== previous.padding) {
       diff.padding = current.padding;

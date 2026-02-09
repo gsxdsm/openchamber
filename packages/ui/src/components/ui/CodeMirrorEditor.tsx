@@ -1,12 +1,20 @@
 import React from 'react';
 
 import type { Extension } from '@codemirror/state';
-import { Compartment, EditorState, RangeSetBuilder } from '@codemirror/state';
-import { Decoration, EditorView, ViewPlugin, gutters, keymap, lineNumbers } from '@codemirror/view';
+import { Compartment, EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType, gutters, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands';
 import { indentUnit } from '@codemirror/language';
+import { search, searchKeymap, openSearchPanel, closeSearchPanel } from '@codemirror/search';
+import { createPortal } from 'react-dom';
 
 import { cn } from '@/lib/utils';
+
+export type BlockWidgetDef = {
+  afterLine: number;
+  id: string;
+  content: React.ReactNode;
+};
 
 type CodeMirrorEditorProps = {
   value: string;
@@ -16,12 +24,81 @@ type CodeMirrorEditorProps = {
   readOnly?: boolean;
   lineNumbersConfig?: Parameters<typeof lineNumbers>[0];
   highlightLines?: { start: number; end: number };
+  blockWidgets?: BlockWidgetDef[];
+  onViewReady?: (view: EditorView) => void;
+  onViewDestroy?: () => void;
+  enableSearch?: boolean;
+  searchOpen?: boolean;
+  onSearchOpenChange?: (open: boolean) => void;
 };
 
 const lineNumbersCompartment = new Compartment();
 const editableCompartment = new Compartment();
 const externalExtensionsCompartment = new Compartment();
 const highlightLinesCompartment = new Compartment();
+const blockWidgetsCompartment = new Compartment();
+const searchCompartment = new Compartment();
+
+// BlockWidget class definition moved inside helper or adapted to take map
+class BlockWidget extends WidgetType {
+  constructor(readonly id: string, readonly containerMap: Map<string, HTMLElement>) {
+    super();
+  }
+
+  toDOM() {
+    let div = this.containerMap.get(this.id);
+    if (!div) {
+      div = document.createElement('div');
+      div.className = 'oc-block-widget';
+      div.dataset.widgetId = this.id;
+      this.containerMap.set(this.id, div);
+    }
+    return div;
+  }
+
+  eq(other: BlockWidget) {
+    return other.id === this.id;
+  }
+  
+  destroy() {
+    // We do NOT remove from map here because CM might destroy the widget
+    // when it scrolls out of view, but we want to reuse the same container (and Portal)
+    // when it scrolls back in.
+  }
+}
+
+const createBlockWidgetsExtension = (widgets: BlockWidgetDef[] | undefined, containerMap: Map<string, HTMLElement>) => {
+  if (!widgets || widgets.length === 0) return [];
+
+  return StateField.define<DecorationSet>({
+    create(state) {
+      const builder = new RangeSetBuilder<Decoration>();
+      // Sort widgets by line number to add them in order
+      const sorted = [...widgets].sort((a, b) => a.afterLine - b.afterLine);
+      
+      for (const w of sorted) {
+        const lineCount = state.doc.lines;
+        if (w.afterLine > lineCount) continue;
+        
+        const line = state.doc.line(w.afterLine);
+        // Add widget decoration
+        builder.add(line.to, line.to, Decoration.widget({
+          widget: new BlockWidget(w.id, containerMap),
+          block: true,
+          side: 1, 
+        }));
+      }
+      return builder.finish();
+    },
+    update(deco, tr) {
+      // If the doc changed, map the decorations.
+      // If the widgets prop changed, the compartment reconfigure will handle it (create() will run).
+      return deco.map(tr.changes);
+    },
+    provide: f => EditorView.decorations.from(f)
+  });
+};
+
 
 const createHighlightLinesExtension = (range?: { start: number; end: number }): Extension => {
   if (!range) {
@@ -55,11 +132,30 @@ const createHighlightLinesExtension = (range?: { start: number; end: number }): 
   }, { decorations: (v) => v.decorations });
 };
 
-export function CodeMirrorEditor({ value, onChange, extensions, className, readOnly, lineNumbersConfig, highlightLines }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({
+  value,
+  onChange,
+  extensions,
+  className,
+  readOnly,
+  lineNumbersConfig,
+  highlightLines,
+  onViewReady,
+  onViewDestroy,
+  blockWidgets,
+  enableSearch,
+  searchOpen,
+}: CodeMirrorEditorProps) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const viewRef = React.useRef<EditorView | null>(null);
   const valueRef = React.useRef(value);
   const onChangeRef = React.useRef(onChange);
+  const onViewReadyRef = React.useRef(onViewReady);
+  const onViewDestroyRef = React.useRef(onViewDestroy);
+  const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+  
+  // Scoped map for widget containers to avoid global collisions and memory leaks
+  const widgetContainersRef = React.useRef(new Map<string, HTMLElement>());
 
   React.useEffect(() => {
     valueRef.current = value;
@@ -68,6 +164,11 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
   React.useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  React.useEffect(() => {
+    onViewReadyRef.current = onViewReady;
+    onViewDestroyRef.current = onViewDestroy;
+  }, [onViewReady, onViewDestroy]);
 
   React.useEffect(() => {
     if (!hostRef.current) {
@@ -83,6 +184,9 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
         indentUnit.of('  '),
         keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
+          if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+            forceUpdate();
+          }
           if (!update.docChanged) {
             return;
           }
@@ -93,6 +197,8 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
         editableCompartment.of(EditorView.editable.of(!readOnly)),
         externalExtensionsCompartment.of(extensions ?? []),
         highlightLinesCompartment.of(createHighlightLinesExtension(highlightLines)),
+        blockWidgetsCompartment.of(createBlockWidgetsExtension(blockWidgets, widgetContainersRef.current)),
+        searchCompartment.of(enableSearch ? [search({ top: true }), keymap.of(searchKeymap)] : []),
       ],
     });
 
@@ -101,7 +207,12 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
       parent: hostRef.current,
     });
 
+    if (viewRef.current) {
+      onViewReadyRef.current?.(viewRef.current);
+    }
+
     return () => {
+      onViewDestroyRef.current?.();
       viewRef.current?.destroy();
       viewRef.current = null;
     };
@@ -120,9 +231,27 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
         editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
         externalExtensionsCompartment.reconfigure(extensions ?? []),
         highlightLinesCompartment.reconfigure(createHighlightLinesExtension(highlightLines)),
+        blockWidgetsCompartment.reconfigure(createBlockWidgetsExtension(blockWidgets, widgetContainersRef.current)),
+        searchCompartment.reconfigure(enableSearch ? [search({ top: true }), keymap.of(searchKeymap)] : []),
       ],
     });
-  }, [extensions, highlightLines, lineNumbersConfig, readOnly]);
+
+    // Force a re-render to ensure Portals can find the new widget containers in the DOM
+    // The containers are created synchronously by CodeMirror during dispatch -> toDOM
+    forceUpdate();
+  }, [extensions, highlightLines, lineNumbersConfig, readOnly, blockWidgets, enableSearch]);
+
+  React.useEffect(() => {
+    const view = viewRef.current;
+    if (!view || enableSearch === false) {
+      return;
+    }
+    if (searchOpen) {
+      openSearchPanel(view);
+    } else {
+      closeSearchPanel(view);
+    }
+  }, [searchOpen, enableSearch]);
 
   React.useEffect(() => {
     const view = viewRef.current;
@@ -139,15 +268,25 @@ export function CodeMirrorEditor({ value, onChange, extensions, className, readO
   }, [value]);
 
   return (
-    <div
-      ref={hostRef}
-      className={cn(
-        'h-full w-full',
-        '[&_.cm-editor]:h-full [&_.cm-editor]:w-full',
-        '[&_.cm-scroller]:font-mono [&_.cm-scroller]:text-[var(--text-code)] [&_.cm-scroller]:leading-6',
-        '[&_.cm-lineNumbers]:text-[var(--tools-edit-line-number)]',
-        className,
-      )}
-    />
+    <>
+      <div
+        ref={hostRef}
+        className={cn(
+          'h-full w-full',
+          '[&_.cm-editor]:h-full [&_.cm-editor]:w-full',
+          '[&_.cm-scroller]:font-mono [&_.cm-scroller]:text-[var(--text-code)] [&_.cm-scroller]:leading-6',
+          '[&_.cm-lineNumbers]:text-[var(--tools-edit-line-number)]',
+          className,
+        )}
+      />
+      {blockWidgets?.map((w) => {
+        // Look for the widget container in our scoped map
+        // We prefer the map over querySelector because the container might be created but not yet attached,
+        // or detached temporarily by CM (virtual scrolling). Keeping the portal mounted preserves state.
+        const container = widgetContainersRef.current.get(w.id);
+        if (!container) return null;
+        return createPortal(w.content, container, w.id);
+      })}
+    </>
   );
 }
