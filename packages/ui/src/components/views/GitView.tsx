@@ -771,12 +771,16 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       return;
     }
 
-    // If pushing with multiple remotes and no remote specified, show selection dialog
+    // If pushing with multiple remotes and no remote specified, this shouldn't happen anymore
+    // since CommitSection now uses a dropdown. But keep as fallback for safety.
     if (options.pushAfter && remotes.length > 1 && !options.remote) {
       setPendingPushAction('commitAndPush');
       setPushRemoteDialogOpen(true);
       return;
     }
+
+    // If there's only one remote, use it automatically when no remote is specified
+    const targetRemote = options.remote ?? (remotes.length === 1 ? remotes[0] : undefined);
 
     const action: CommitAction = options.pushAfter ? 'commitAndPush' : 'commit';
     setCommitAction(action);
@@ -794,7 +798,7 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
       await refreshStatusAndBranches();
 
       if (options.pushAfter) {
-        const remoteName = options.remote?.name;
+        const remoteName = targetRemote?.name;
         await git.gitPush(currentDirectory, remoteName ? { remote: remoteName } : undefined);
         toast.success(remoteName ? `Pushed to ${remoteName}` : 'Pushed to remote');
         triggerFireworks();
@@ -1691,11 +1695,12 @@ export const GitView: React.FC<GitViewProps> = ({ mode = 'full' }) => {
                         onGenerateMessage={handleGenerateCommitMessage}
                         isGeneratingMessage={isGeneratingMessage}
                         onCommit={() => handleCommit({ pushAfter: false })}
-                        onCommitAndPush={() => handleCommit({ pushAfter: true })}
+                        onCommitAndPush={(remote) => handleCommit({ pushAfter: true, remote })}
                         commitAction={commitAction}
                         isBusy={isBusy}
                         gitmojiEnabled={settingsGitmojiEnabled}
                         onOpenGitmojiPicker={() => setIsGitmojiPickerOpen(true)}
+                        remotes={remotes}
                       />
                     </>
                   ) : (
