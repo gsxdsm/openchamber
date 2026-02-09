@@ -6268,14 +6268,20 @@ async function main(options = {}) {
         return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
       }
 
-      // For fork workflows: if headRemote is specified and different from remote,
-      // we need to prefix the head with the fork owner (e.g., "fork-owner:branch")
+      // For fork workflows: we need to determine the correct head reference
+      // If headRemote is specified, use that to get the head owner
+      // Otherwise, try 'origin' as the default source of the branch
       let headRef = head;
-      if (headRemote && headRemote !== remote) {
-        const { repo: headRepo } = await resolveGitHubRepoFromDirectory(directory, headRemote);
-        if (headRepo && headRepo.owner !== repo.owner) {
-          // Cross-fork PR: prefix head with the fork owner
-          headRef = `${headRepo.owner}:${head}`;
+      const sourceRemote = headRemote || (remote !== 'origin' ? 'origin' : '');
+      
+      if (sourceRemote) {
+        const { repo: headRepo } = await resolveGitHubRepoFromDirectory(directory, sourceRemote);
+        if (headRepo) {
+          // Always use owner:branch format for cross-repo PRs
+          // GitHub API requires this when head is from a different repo/fork
+          if (headRepo.owner !== repo.owner || headRepo.repo !== repo.repo) {
+            headRef = `${headRepo.owner}:${head}`;
+          }
         }
       }
 

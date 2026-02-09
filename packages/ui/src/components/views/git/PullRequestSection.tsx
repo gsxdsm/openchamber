@@ -972,7 +972,7 @@ export const PullRequestSection: React.FC<{
     }
   }, [baseBranch, branch, directory, isGenerating, additionalContext, onGeneratedDescription]);
 
-  const createPr = React.useCallback(async (targetRemote?: GitRemote, headRemote?: GitRemote) => {
+  const createPr = React.useCallback(async () => {
     if (!github?.prCreate) {
       toast.error('GitHub runtime API unavailable');
       return;
@@ -985,6 +985,10 @@ export const PullRequestSection: React.FC<{
 
     setIsCreating(true);
     try {
+      // Use selectedRemote as target, and 'origin' as head source for fork workflows
+      const originRemote = remotes.find((r) => r.name === 'origin');
+      const isTargetingNonOrigin = selectedRemote && selectedRemote.name !== 'origin';
+      
       const pr = await github.prCreate({
         directory,
         title: trimmedTitle,
@@ -992,8 +996,9 @@ export const PullRequestSection: React.FC<{
         base: baseBranch,
         ...(body.trim() ? { body } : {}),
         draft,
-        ...(targetRemote ? { remote: targetRemote.name } : {}),
-        ...(headRemote ? { headRemote: headRemote.name } : {}),
+        ...(selectedRemote ? { remote: selectedRemote.name } : {}),
+        // For fork workflows: if targeting non-origin remote, use origin as head source
+        ...(isTargetingNonOrigin && originRemote ? { headRemote: originRemote.name } : {}),
       });
       toast.success('PR created');
       setStatus((prev) => (prev ? { ...prev, pr } : prev));
@@ -1004,7 +1009,7 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsCreating(false);
     }
-  }, [baseBranch, body, branch, directory, draft, github, refresh, title]);
+  }, [baseBranch, body, branch, directory, draft, github, refresh, remotes, selectedRemote, title]);
 
   const mergePr = React.useCallback(async (pr: GitHubPullRequest) => {
     if (!github?.prMerge) {
@@ -1658,67 +1663,17 @@ export const PullRequestSection: React.FC<{
                     Generate
                   </Button>
                   <div className="flex-1" />
-                  {hasMultipleRemotes ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="sm"
-                          className="min-w-[7.5rem] justify-center gap-2"
-                          disabled={isCreating || !isConnected}
-                        >
-                          <span className="inline-flex size-4 items-center justify-center">
-                            {isCreating ? <RiLoader4Line className="size-4 animate-spin" /> : <RiGitPullRequestLine className="size-4" />}
-                          </span>
-                          <span>Create PR</span>
-                          <RiArrowDownSLine className="size-4 opacity-60" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[240px]">
-                        <div className="px-2 py-1.5 typography-micro text-muted-foreground">
-                          Create PR on:
-                        </div>
-                        {remotes.map((targetRemote) => {
-                          // For fork workflows: head remote is typically 'origin'
-                          // If target is 'origin', no headRemote needed
-                          // If target is different (e.g., 'upstream'), use 'origin' as headRemote
-                          const originRemote = remotes.find((r) => r.name === 'origin');
-                          const headRemote = targetRemote.name === 'origin' ? undefined : originRemote;
-                          return (
-                            <DropdownMenuItem
-                              key={targetRemote.name}
-                              onSelect={() => createPr(targetRemote, headRemote)}
-                            >
-                              <div className="flex flex-col">
-                                <span className="typography-ui-label text-foreground">
-                                  {targetRemote.name}
-                                  {headRemote && (
-                                    <span className="text-muted-foreground font-normal">
-                                      {' '}(from {headRemote.name})
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="typography-meta text-muted-foreground truncate">
-                                  {targetRemote.pushUrl}
-                                </span>
-                              </div>
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="min-w-[7.5rem] justify-center gap-2"
-                      onClick={() => createPr(remotes[0])}
-                      disabled={isCreating || !isConnected}
-                    >
-                      <span className="inline-flex size-4 items-center justify-center">
-                        {isCreating ? <RiLoader4Line className="size-4 animate-spin" /> : <RiGitPullRequestLine className="size-4" />}
-                      </span>
-                      <span>Create PR</span>
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    className="min-w-[7.5rem] justify-center gap-2"
+                    onClick={createPr}
+                    disabled={isCreating || !isConnected}
+                  >
+                    <span className="inline-flex size-4 items-center justify-center">
+                      {isCreating ? <RiLoader4Line className="size-4 animate-spin" /> : <RiGitPullRequestLine className="size-4" />}
+                    </span>
+                    <span>Create PR</span>
+                  </Button>
                 </div>
               </div>
             )}
